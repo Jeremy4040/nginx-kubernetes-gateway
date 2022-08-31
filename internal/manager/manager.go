@@ -5,6 +5,7 @@ import (
 	"time"
 
 	apiv1 "k8s.io/api/core/v1"
+	discoveryV1 "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctlr "sigs.k8s.io/controller-runtime"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/nginxinc/nginx-kubernetes-gateway/internal/config"
 	"github.com/nginxinc/nginx-kubernetes-gateway/internal/events"
+	endpointslice "github.com/nginxinc/nginx-kubernetes-gateway/internal/implementations/endpointslice"
 	gw "github.com/nginxinc/nginx-kubernetes-gateway/internal/implementations/gateway"
 	gc "github.com/nginxinc/nginx-kubernetes-gateway/internal/implementations/gatewayclass"
 	hr "github.com/nginxinc/nginx-kubernetes-gateway/internal/implementations/httproute"
@@ -41,6 +43,7 @@ func init() {
 	// FIXME(pleshakov): handle errors returned by the calls bellow
 	_ = gatewayv1beta1.AddToScheme(scheme)
 	_ = apiv1.AddToScheme(scheme)
+	_ = discoveryV1.AddToScheme(scheme)
 }
 
 func Start(cfg config.Config) error {
@@ -79,6 +82,10 @@ func Start(cfg config.Config) error {
 	err = sdk.RegisterSecretController(mgr, secret.NewSecretImplementation(cfg, eventCh))
 	if err != nil {
 		return fmt.Errorf("cannot register secret implementation: %w", err)
+	}
+	err = sdk.RegisterEndpointSliceController(mgr, endpointslice.NewEndpointSliceImplementation(cfg, eventCh))
+	if err != nil {
+		return fmt.Errorf("cannot register endpointslice implementation: %w", err)
 	}
 
 	secretStore := state.NewSecretStore()
@@ -125,6 +132,7 @@ func Start(cfg config.Config) error {
 		[]client.ObjectList{
 			&apiv1.ServiceList{},
 			&apiv1.SecretList{},
+			&discoveryV1.EndpointSliceList{},
 			&gatewayv1beta1.GatewayList{},
 			&gatewayv1beta1.HTTPRouteList{},
 		},
