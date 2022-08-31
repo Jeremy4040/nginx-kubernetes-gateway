@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-logr/logr"
 	apiv1 "k8s.io/api/core/v1"
+	discoveryV1 "k8s.io/api/discovery/v1"
 	"sigs.k8s.io/gateway-api/apis/v1beta1"
 
 	"github.com/nginxinc/nginx-kubernetes-gateway/internal/nginx/config"
@@ -131,11 +132,13 @@ func (h *EventHandlerImpl) propagateUpsert(e *UpsertEvent) {
 	case *v1beta1.HTTPRoute:
 		h.cfg.Processor.CaptureUpsertChange(r)
 	case *apiv1.Service:
-		// FIXME(pleshakov): make sure the affected hosts are updated
 		h.cfg.ServiceStore.Upsert(r)
+		h.cfg.Processor.CaptureUpsertChange(r)
 	case *apiv1.Secret:
 		// FIXME(kate-osborn): need to handle certificate rotation
 		h.cfg.SecretStore.Upsert(r)
+	case *discoveryV1.EndpointSlice:
+		h.cfg.Processor.CaptureUpsertChange(r)
 	default:
 		panic(fmt.Errorf("unknown resource type %T", e.Resource))
 	}
@@ -150,11 +153,13 @@ func (h *EventHandlerImpl) propagateDelete(e *DeleteEvent) {
 	case *v1beta1.HTTPRoute:
 		h.cfg.Processor.CaptureDeleteChange(e.Type, e.NamespacedName)
 	case *apiv1.Service:
-		// FIXME(pleshakov): make sure the affected hosts are updated
 		h.cfg.ServiceStore.Delete(e.NamespacedName)
+		h.cfg.Processor.CaptureDeleteChange(e.Type, e.NamespacedName)
 	case *apiv1.Secret:
 		// FIXME(kate-osborn): make sure that affected servers are updated
 		h.cfg.SecretStore.Delete(e.NamespacedName)
+	case *discoveryV1.EndpointSlice:
+		h.cfg.Processor.CaptureDeleteChange(e.Type, e.NamespacedName)
 	default:
 		panic(fmt.Errorf("unknown resource type %T", e.Type))
 	}
