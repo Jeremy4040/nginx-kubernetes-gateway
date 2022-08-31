@@ -97,7 +97,7 @@ func Start(cfg config.Config) error {
 		SecretMemoryManager: secretMemoryMgr,
 	})
 
-	serviceStore := state.NewServiceStore()
+	serviceStore := state.NewServiceStore(mgr.GetClient())
 	configGenerator := ngxcfg.NewGeneratorImpl(serviceStore)
 	nginxFileMgr := file.NewManagerImpl()
 	nginxRuntimeMgr := ngxruntime.NewManagerImpl()
