@@ -2,6 +2,7 @@ package state
 
 import (
 	"fmt"
+	"sort"
 )
 
 // InvalidBackendRef is the upstream name for a backend ref that is invalid.
@@ -24,6 +25,11 @@ func buildUpstreams(backends map[backendService]backend) []Upstream {
 			Endpoints: b.Endpoints,
 		})
 	}
+
+	// sort upstreams for test-ability
+	sort.Slice(upstreams, func(i, j int) bool {
+		return upstreams[i].Name < upstreams[j].Name
+	})
 
 	return upstreams
 }

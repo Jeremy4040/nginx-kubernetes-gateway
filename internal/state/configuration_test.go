@@ -965,10 +965,10 @@ func TestBuildUpstreams(t *testing.T) {
 	}
 
 	expUpstreams := []Upstream{
-		{Name: "test_foo_80", Endpoints: fooEndpoints},
 		{Name: "test_bar_8080", Endpoints: barEndpoints},
+		{Name: "test_empty-endpoints_443", Endpoints: []Endpoint{}},
+		{Name: "test_foo_80", Endpoints: fooEndpoints},
 		{Name: "test_nil-endpoints_443", Endpoints: nil},
-		{Name: "test_empty-endpoints_443", Endpoints: nil},
 	}
 
 	upstreams := buildUpstreams(backends)
