@@ -46,13 +46,16 @@ type gatewayClass struct {
 type ruleIndex int
 
 type backendService struct {
-	name      string
-	namespace string
-	port      int32
+	Name      string
+	Namespace string
+	Port      int32
 }
 
 type backend struct {
 	Endpoints []Endpoint
+
+	// ErrorMsg explains the error when the backend is not valid
+	ErrorMsg string
 }
 
 // graph is a graph-like representation of Gateway API resources.
@@ -123,9 +126,9 @@ func resolveBackends(
 
 		backendServicesForRoute := make(map[ruleIndex]backendService)
 
-		for i := range r.Source.Spec.Rules {
+		for i, rule := range r.Source.Spec.Rules {
 
-			backendSvc, err := getBackendServiceForRouteRule(r.Source, i)
+			backendSvc, err := getBackendServiceFromRouteRule(rule, r.Source.Namespace)
 			backendServicesForRoute[ruleIndex(i)] = backendSvc
 
 			if err != nil {
@@ -134,14 +137,23 @@ func resolveBackends(
 				continue
 			}
 
-			if _, exist := backends[backendSvc]; !exist {
-				endpoints, err := serviceStore.Resolve(types.NamespacedName{Namespace: backendSvc.namespace, Name: backendSvc.name}, backendSvc.port)
-				if err != nil {
-					warnings.AddWarningf(r.Source, "cannot resolve backend service for rule %d: %s", i, err.Error())
+			if b, exists := backends[backendSvc]; exists {
+				if b.ErrorMsg != "" {
+					warnings.AddWarningf(r.Source, "cannot resolve backend ref for rule %d: %s", i, b.ErrorMsg)
 				}
 
-				backends[backendSvc] = backend{Endpoints: endpoints}
+				continue
 			}
+
+			b := backend{}
+
+			b.Endpoints, err = serviceStore.Resolve(types.NamespacedName{Namespace: backendSvc.Namespace, Name: backendSvc.Name}, backendSvc.Port)
+			if err != nil {
+				b.ErrorMsg = err.Error()
+				warnings.AddWarningf(r.Source, "cannot resolve backend ref for rule %d: %s", i, err.Error())
+			}
+
+			backends[backendSvc] = b
 		}
 
 		r.BackendServices = backendServicesForRoute
@@ -150,18 +162,18 @@ func resolveBackends(
 	return backends, warnings
 }
 
-func getBackendServiceForRouteRule(route *v1beta1.HTTPRoute, ruleIdx int) (backendService, error) {
-	if len(route.Spec.Rules[ruleIdx].BackendRefs) == 0 {
+func getBackendServiceFromRouteRule(rule v1beta1.HTTPRouteRule, routeNs string) (backendService, error) {
+	if len(rule.BackendRefs) == 0 {
 		return backendService{}, errors.New("no backend refs provided")
 	}
 
-	ref := route.Spec.Rules[ruleIdx].BackendRefs[0]
+	ref := rule.BackendRefs[0]
 	if ref.Kind != nil && *ref.Kind != "Service" {
 		return backendService{}, fmt.Errorf("backend ref Kind must be \"Service\"; got %s", *ref.Kind)
 	}
 
-	if ref.Namespace != nil && string(*ref.Namespace) != route.Namespace {
-		return backendService{}, fmt.Errorf("cross-namespace routing is not permitted; Service namespace must match the http route namespace %s", route.Namespace)
+	if ref.Namespace != nil && string(*ref.Namespace) != routeNs {
+		return backendService{}, fmt.Errorf("cross-namespace routing is not permitted; namespace %s does not match the HTTPRoute namespace %s", *ref.Namespace, routeNs)
 	}
 
 	if ref.Port == nil {
@@ -169,9 +181,9 @@ func getBackendServiceForRouteRule(route *v1beta1.HTTPRoute, ruleIdx int) (backe
 	}
 
 	return backendService{
-		name:      string(ref.Name),
-		namespace: route.Namespace,
-		port:      int32(*ref.Port),
+		Name:      string(ref.Name),
+		Namespace: routeNs,
+		Port:      int32(*ref.Port),
 	}, nil
 }
 

@@ -59,17 +59,17 @@ func (s *serviceStoreImpl) Delete(nsname types.NamespacedName) {
 func (s *serviceStoreImpl) Resolve(nsname types.NamespacedName, port int32) ([]Endpoint, error) {
 	svc, exist := s.services[nsname.String()]
 	if !exist {
-		return nil, fmt.Errorf("service %s doesn't exist", nsname)
+		return nil, fmt.Errorf("Service %s doesn't exist", nsname)
 	}
 
 	targetPort := getTargetPort(svc, port)
 	if targetPort == 0 {
-		return nil, fmt.Errorf("no matching target port for service %s and port %d", nsname, port)
+		return nil, fmt.Errorf("no matching target port for Service %s and port %d", nsname, port)
 	}
 
 	endpoints, err := s.resolveEndpoints(svc, targetPort)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve endpoints for service %s: %w", nsname, err)
+		return nil, fmt.Errorf("failed to resolve endpoints for Service %s: %w", nsname, err)
 	}
 
 	return endpoints, nil

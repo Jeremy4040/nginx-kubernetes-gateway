@@ -10,10 +10,10 @@ import (
 const InvalidBackendRef = "invalid_backend_ref"
 
 func generateUpstreamName(service backendService) string {
-	if service.name == "" {
+	if service.Name == "" {
 		return InvalidBackendRef
 	}
-	return fmt.Sprintf("%s_%s_%d", service.namespace, service.name, service.port)
+	return fmt.Sprintf("%s_%s_%d", service.Namespace, service.Name, service.Port)
 }
 
 func buildUpstreams(backends map[backendService]backend) []Upstream {

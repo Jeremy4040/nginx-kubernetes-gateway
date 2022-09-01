@@ -48,7 +48,7 @@ func TestBuildConfiguration(t *testing.T) {
 		}
 	}
 
-	fooBackendSvc := backendService{name: "foo", namespace: "test", port: 80}
+	fooBackendSvc := backendService{Name: "foo", Namespace: "test", Port: 80}
 
 	fooBackend := backend{
 		Endpoints: []Endpoint{
@@ -958,10 +958,10 @@ func TestBuildUpstreams(t *testing.T) {
 	}
 
 	backends := map[backendService]backend{
-		backendService{name: "foo", namespace: "test", port: 80}:              {Endpoints: fooEndpoints},
-		backendService{name: "bar", namespace: "test", port: 8080}:            {Endpoints: barEndpoints},
-		backendService{name: "nil-endpoints", namespace: "test", port: 443}:   {Endpoints: nil},
-		backendService{name: "empty-endpoints", namespace: "test", port: 443}: {Endpoints: []Endpoint{}},
+		backendService{Name: "foo", Namespace: "test", Port: 80}:              {Endpoints: fooEndpoints},
+		backendService{Name: "bar", Namespace: "test", Port: 8080}:            {Endpoints: barEndpoints},
+		backendService{Name: "nil-endpoints", Namespace: "test", Port: 443}:   {Endpoints: nil},
+		backendService{Name: "empty-endpoints", Namespace: "test", Port: 443}: {Endpoints: []Endpoint{}},
 	}
 
 	expUpstreams := []Upstream{
@@ -985,7 +985,7 @@ func TestGenerateUpstreamName(t *testing.T) {
 	}
 
 	expName := "test_foo_9090"
-	if name := generateUpstreamName(backendService{name: "foo", namespace: "test", port: 9090}); name != expName {
+	if name := generateUpstreamName(backendService{Name: "foo", Namespace: "test", Port: 9090}); name != expName {
 		t.Errorf("generateUpstreamName() returned unexepected name: %s, expected: %s", name, expName)
 	}
 }
