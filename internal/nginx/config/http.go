@@ -4,6 +4,10 @@ type httpServers struct {
 	Servers []server
 }
 
+type httpUpstreams struct {
+	Upstreams []upstream
+}
+
 type server struct {
 	SSL           *ssl
 	ServerName    string
@@ -32,3 +36,12 @@ type ssl struct {
 type statusCode int
 
 const statusNotFound statusCode = 404
+
+type upstream struct {
+	Name    string
+	Servers []upstreamServer
+}
+
+type upstreamServer struct {
+	Address string
+}
