@@ -19,6 +19,8 @@ type Configuration struct {
 	// SSLServers holds all SSLServers.
 	// FIXME(kate-osborn) We assume that all SSL servers listen on port 443.
 	SSLServers []VirtualServer
+	// Upstreams holds all Upstreams.
+	Upstreams []Upstream
 }
 
 // VirtualServer is a virtual server.
@@ -29,6 +31,13 @@ type VirtualServer struct {
 	PathRules []PathRule
 	// SSL holds the SSL configuration options fo the server.
 	SSL *SSL
+}
+
+type Upstream struct {
+	// Name is the name of the Upstream. Will be unique for each service/port combination.
+	Name string
+	// Endpoints are the endpoints of the Upstream.
+	Endpoints []Endpoint
 }
 
 type SSL struct {
@@ -52,6 +61,8 @@ type MatchRule struct {
 	MatchIdx int
 	// RuleIdx is the index of the corresponding rule in the HTTPRoute.
 	RuleIdx int
+	// UpstreamName is the name of the upstream for this routing rule.
+	UpstreamName string
 	// Source is the corresponding HTTPRoute resource.
 	Source *v1beta1.HTTPRoute
 }
@@ -72,45 +83,47 @@ func buildConfiguration(graph *graph) Configuration {
 		return Configuration{}
 	}
 
-	configBuilder := newConfigBuilder()
+	upstreams := buildUpstreams(graph.Backends)
+
+	builderFactory := newVirtualServerBuilderFactory()
 
 	for _, l := range graph.Gateway.Listeners {
 		// only upsert listeners that are valid
 		if l.Valid {
-			configBuilder.upsertListener(l)
+			builder := builderFactory.getBuilderForProtocol(l.Source.Protocol)
+			builder.upsertListener(l)
 		}
 	}
 
-	return configBuilder.build()
+	config := Configuration{
+		HTTPServers: builderFactory.getBuilderForProtocol(v1beta1.HTTPProtocolType).build(),
+		SSLServers:  builderFactory.getBuilderForProtocol(v1beta1.HTTPSProtocolType).build(),
+		Upstreams:   upstreams,
+	}
+
+	return config
 }
 
-type configBuilder struct {
+type virtualServerBuilderFactory struct {
 	http *virtualServerBuilder
 	ssl  *virtualServerBuilder
 }
 
-func newConfigBuilder() *configBuilder {
-	return &configBuilder{
+func newVirtualServerBuilderFactory() *virtualServerBuilderFactory {
+	return &virtualServerBuilderFactory{
 		http: newVirtualServerBuilder(v1beta1.HTTPProtocolType),
 		ssl:  newVirtualServerBuilder(v1beta1.HTTPSProtocolType),
 	}
 }
 
-func (b *configBuilder) upsertListener(l *listener) {
-	switch l.Source.Protocol {
+func (b *virtualServerBuilderFactory) getBuilderForProtocol(protocol v1beta1.ProtocolType) *virtualServerBuilder {
+	switch protocol {
 	case v1beta1.HTTPProtocolType:
-		b.http.upsertListener(l)
+		return b.http
 	case v1beta1.HTTPSProtocolType:
-		b.ssl.upsertListener(l)
+		return b.ssl
 	default:
-		panic(fmt.Sprintf("listener protocol %s not supported", l.Source.Protocol))
-	}
-}
-
-func (b *configBuilder) build() Configuration {
-	return Configuration{
-		HTTPServers: b.http.build(),
-		SSLServers:  b.ssl.build(),
+		panic(fmt.Sprintf("protocol %s not supported", protocol))
 	}
 }
 
@@ -163,9 +176,10 @@ func (b *virtualServerBuilder) upsertListener(l *listener) {
 					}
 
 					rule.MatchRules = append(rule.MatchRules, MatchRule{
-						MatchIdx: j,
-						RuleIdx:  i,
-						Source:   r.Source,
+						MatchIdx:     j,
+						RuleIdx:      i,
+						UpstreamName: generateUpstreamName(r.BackendServices[ruleIndex(i)]),
+						Source:       r.Source,
 					})
 
 					b.rulesPerHost[h][path] = rule

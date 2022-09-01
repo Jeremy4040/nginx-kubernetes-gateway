@@ -91,14 +91,16 @@ func Start(cfg config.Config) error {
 	secretStore := state.NewSecretStore()
 	secretMemoryMgr := state.NewSecretDiskMemoryManager(secretsFolder, secretStore)
 
+	serviceStore := state.NewServiceStore(mgr.GetClient())
 	processor := state.NewChangeProcessorImpl(state.ChangeProcessorConfig{
 		GatewayCtlrName:     cfg.GatewayCtlrName,
 		GatewayClassName:    cfg.GatewayClassName,
 		SecretMemoryManager: secretMemoryMgr,
+		ServiceStore:        serviceStore,
+		Logger:              cfg.Logger.WithName("changeProcessor"),
 	})
 
-	serviceStore := state.NewServiceStore(mgr.GetClient())
-	configGenerator := ngxcfg.NewGeneratorImpl(serviceStore)
+	configGenerator := ngxcfg.NewGeneratorImpl()
 	nginxFileMgr := file.NewManagerImpl()
 	nginxRuntimeMgr := ngxruntime.NewManagerImpl()
 	statusUpdater := status.NewUpdater(status.UpdaterConfig{

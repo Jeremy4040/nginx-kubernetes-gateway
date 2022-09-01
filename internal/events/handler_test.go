@@ -55,9 +55,9 @@ var _ = Describe("EventHandler", func() {
 		Expect(fakeGenerator.GenerateCallCount()).Should(Equal(1))
 		Expect(fakeGenerator.GenerateArgsForCall(0)).Should(Equal(expectedConf))
 
-		Expect(fakeNginxFimeMgr.WriteHTTPServersConfigCallCount()).Should(Equal(1))
-		name, cfg := fakeNginxFimeMgr.WriteHTTPServersConfigArgsForCall(0)
-		Expect(name).Should(Equal("http-servers"))
+		Expect(fakeNginxFimeMgr.WriteHTTPConfigCallCount()).Should(Equal(1))
+		name, cfg := fakeNginxFimeMgr.WriteHTTPConfigArgsForCall(0)
+		Expect(name).Should(Equal("http"))
 		Expect(cfg).Should(Equal(expectedCfg))
 
 		Expect(fakeNginxRuntimeMgr.ReloadCallCount()).Should(Equal(1))
@@ -99,7 +99,7 @@ var _ = Describe("EventHandler", func() {
 				fakeProcessor.ProcessReturns(changed, fakeConf, fakeStatuses)
 
 				fakeCfg := []byte("fake")
-				fakeGenerator.GenerateReturns(fakeCfg, config.Warnings{})
+				fakeGenerator.GenerateReturns(fakeCfg)
 
 				batch := []interface{}{e}
 
@@ -140,7 +140,7 @@ var _ = Describe("EventHandler", func() {
 		expectNoReconfig := func() {
 			Expect(fakeProcessor.ProcessCallCount()).Should(Equal(1))
 			Expect(fakeGenerator.GenerateCallCount()).Should(Equal(0))
-			Expect(fakeNginxFimeMgr.WriteHTTPServersConfigCallCount()).Should(Equal(0))
+			Expect(fakeNginxFimeMgr.WriteHTTPConfigCallCount()).Should(Equal(0))
 			Expect(fakeNginxRuntimeMgr.ReloadCallCount()).Should(Equal(0))
 			Expect(fakeStatusUpdater.UpdateCallCount()).Should(Equal(0))
 		}
@@ -211,7 +211,7 @@ var _ = Describe("EventHandler", func() {
 		fakeProcessor.ProcessReturns(changed, fakeConf, fakeStatuses)
 
 		fakeCfg := []byte("fake")
-		fakeGenerator.GenerateReturns(fakeCfg, config.Warnings{})
+		fakeGenerator.GenerateReturns(fakeCfg)
 
 		handler.HandleEventBatch(context.TODO(), batch)
 

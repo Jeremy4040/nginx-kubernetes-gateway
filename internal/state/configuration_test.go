@@ -48,6 +48,29 @@ func TestBuildConfiguration(t *testing.T) {
 		}
 	}
 
+	fooBackendSvc := backendService{name: "foo", namespace: "test", port: 80}
+
+	fooBackend := backend{
+		Endpoints: []Endpoint{
+			{
+				Address: "10.0.0.0",
+				Port:    8080,
+			},
+		},
+	}
+
+	fooUpstreamName := "test_foo_80"
+
+	fooUpstream := Upstream{
+		Name: fooUpstreamName,
+		Endpoints: []Endpoint{
+			{
+				Address: "10.0.0.0",
+				Port:    8080,
+			},
+		},
+	}
+
 	hr1 := createRoute("hr-1", "foo.example.com", "listener-80-1", "/")
 
 	routeHR1 := &route{
@@ -56,6 +79,9 @@ func TestBuildConfiguration(t *testing.T) {
 			"listener-80-1": {},
 		},
 		InvalidSectionNameRefs: map[string]struct{}{},
+		BackendServices: map[ruleIndex]backendService{
+			ruleIndex(0): fooBackendSvc,
+		},
 	}
 
 	hr2 := createRoute("hr-2", "bar.example.com", "listener-80-1", "/")
@@ -66,6 +92,9 @@ func TestBuildConfiguration(t *testing.T) {
 			"listener-80-1": {},
 		},
 		InvalidSectionNameRefs: map[string]struct{}{},
+		BackendServices: map[ruleIndex]backendService{
+			ruleIndex(0): fooBackendSvc,
+		},
 	}
 
 	httpsHR1 := createRoute("https-hr-1", "foo.example.com", "listener-443-1", "/")
@@ -76,6 +105,9 @@ func TestBuildConfiguration(t *testing.T) {
 			"listener-443-1": {},
 		},
 		InvalidSectionNameRefs: map[string]struct{}{},
+		BackendServices: map[ruleIndex]backendService{
+			ruleIndex(0): fooBackendSvc,
+		},
 	}
 
 	httpsHR2 := createRoute("https-hr-2", "bar.example.com", "listener-443-1", "/")
@@ -86,6 +118,9 @@ func TestBuildConfiguration(t *testing.T) {
 			"listener-443-1": {},
 		},
 		InvalidSectionNameRefs: map[string]struct{}{},
+		BackendServices: map[ruleIndex]backendService{
+			ruleIndex(0): fooBackendSvc,
+		},
 	}
 
 	hr3 := createRoute("hr-3", "foo.example.com", "listener-80-1", "/", "/third")
@@ -96,6 +131,10 @@ func TestBuildConfiguration(t *testing.T) {
 			"listener-80-1": {},
 		},
 		InvalidSectionNameRefs: map[string]struct{}{},
+		BackendServices: map[ruleIndex]backendService{
+			ruleIndex(0): fooBackendSvc,
+			ruleIndex(1): fooBackendSvc,
+		},
 	}
 
 	httpsHR3 := createRoute("https-hr-3", "foo.example.com", "listener-443-1", "/", "/third")
@@ -106,6 +145,10 @@ func TestBuildConfiguration(t *testing.T) {
 			"listener-443-1": {},
 		},
 		InvalidSectionNameRefs: map[string]struct{}{},
+		BackendServices: map[ruleIndex]backendService{
+			ruleIndex(0): fooBackendSvc,
+			ruleIndex(1): fooBackendSvc,
+		},
 	}
 
 	hr4 := createRoute("hr-4", "foo.example.com", "listener-80-1", "/fourth", "/")
@@ -116,6 +159,10 @@ func TestBuildConfiguration(t *testing.T) {
 			"listener-80-1": {},
 		},
 		InvalidSectionNameRefs: map[string]struct{}{},
+		BackendServices: map[ruleIndex]backendService{
+			ruleIndex(0): fooBackendSvc,
+			ruleIndex(1): fooBackendSvc,
+		},
 	}
 
 	httpsHR4 := createRoute("https-hr-4", "foo.example.com", "listener-443-1", "/fourth", "/")
@@ -126,6 +173,10 @@ func TestBuildConfiguration(t *testing.T) {
 			"listener-443-1": {},
 		},
 		InvalidSectionNameRefs: map[string]struct{}{},
+		BackendServices: map[ruleIndex]backendService{
+			ruleIndex(0): fooBackendSvc,
+			ruleIndex(1): fooBackendSvc,
+		},
 	}
 
 	httpsHR5 := createRoute("https-hr-5", "example.com", "listener-443-with-hostname", "/")
@@ -136,6 +187,9 @@ func TestBuildConfiguration(t *testing.T) {
 			"listener-443-with-hostname": {},
 		},
 		InvalidSectionNameRefs: map[string]struct{}{},
+		BackendServices: map[ruleIndex]backendService{
+			ruleIndex(0): {}, // invalid upstream
+		},
 	}
 
 	listener80 := v1beta1.Listener{
@@ -211,6 +265,7 @@ func TestBuildConfiguration(t *testing.T) {
 			expected: Configuration{
 				HTTPServers: []VirtualServer{},
 				SSLServers:  []VirtualServer{},
+				Upstreams:   []Upstream{},
 			},
 			msg: "no listeners and routes",
 		},
@@ -236,6 +291,7 @@ func TestBuildConfiguration(t *testing.T) {
 			expected: Configuration{
 				HTTPServers: []VirtualServer{},
 				SSLServers:  []VirtualServer{},
+				Upstreams:   []Upstream{},
 			},
 			msg: "http listener with no routes",
 		},
@@ -278,6 +334,7 @@ func TestBuildConfiguration(t *testing.T) {
 						SSL:      &SSL{CertificatePath: secretPath},
 					},
 				},
+				Upstreams: []Upstream{},
 			},
 			msg: "https listeners with no routes",
 		},
@@ -313,6 +370,7 @@ func TestBuildConfiguration(t *testing.T) {
 			expected: Configuration{
 				HTTPServers: []VirtualServer{},
 				SSLServers:  []VirtualServer{},
+				Upstreams:   []Upstream{},
 			},
 			msg: "invalid listener",
 		},
@@ -343,6 +401,9 @@ func TestBuildConfiguration(t *testing.T) {
 					{Namespace: "test", Name: "hr-1"}: routeHR1,
 					{Namespace: "test", Name: "hr-2"}: routeHR2,
 				},
+				Backends: map[backendService]backend{
+					fooBackendSvc: fooBackend,
+				},
 			},
 			expected: Configuration{
 				HTTPServers: []VirtualServer{
@@ -353,9 +414,10 @@ func TestBuildConfiguration(t *testing.T) {
 								Path: "/",
 								MatchRules: []MatchRule{
 									{
-										MatchIdx: 0,
-										RuleIdx:  0,
-										Source:   hr2,
+										MatchIdx:     0,
+										RuleIdx:      0,
+										UpstreamName: fooUpstreamName,
+										Source:       hr2,
 									},
 								},
 							},
@@ -368,9 +430,10 @@ func TestBuildConfiguration(t *testing.T) {
 								Path: "/",
 								MatchRules: []MatchRule{
 									{
-										MatchIdx: 0,
-										RuleIdx:  0,
-										Source:   hr1,
+										MatchIdx:     0,
+										RuleIdx:      0,
+										UpstreamName: fooUpstreamName,
+										Source:       hr1,
 									},
 								},
 							},
@@ -378,6 +441,7 @@ func TestBuildConfiguration(t *testing.T) {
 					},
 				},
 				SSLServers: []VirtualServer{},
+				Upstreams:  []Upstream{fooUpstream},
 			},
 			msg: "one http listener with two routes for different hostnames",
 		},
@@ -421,6 +485,9 @@ func TestBuildConfiguration(t *testing.T) {
 					{Namespace: "test", Name: "https-hr-2"}: httpsRouteHR2,
 					{Namespace: "test", Name: "https-hr-5"}: httpsRouteHR5,
 				},
+				Backends: map[backendService]backend{
+					fooBackendSvc: fooBackend,
+				},
 			},
 			expected: Configuration{
 				HTTPServers: []VirtualServer{},
@@ -432,9 +499,10 @@ func TestBuildConfiguration(t *testing.T) {
 								Path: "/",
 								MatchRules: []MatchRule{
 									{
-										MatchIdx: 0,
-										RuleIdx:  0,
-										Source:   httpsHR2,
+										MatchIdx:     0,
+										RuleIdx:      0,
+										UpstreamName: fooUpstreamName,
+										Source:       httpsHR2,
 									},
 								},
 							},
@@ -450,9 +518,10 @@ func TestBuildConfiguration(t *testing.T) {
 								Path: "/",
 								MatchRules: []MatchRule{
 									{
-										MatchIdx: 0,
-										RuleIdx:  0,
-										Source:   httpsHR5,
+										MatchIdx:     0,
+										RuleIdx:      0,
+										UpstreamName: InvalidBackendRef,
+										Source:       httpsHR5,
 									},
 								},
 							},
@@ -468,9 +537,10 @@ func TestBuildConfiguration(t *testing.T) {
 								Path: "/",
 								MatchRules: []MatchRule{
 									{
-										MatchIdx: 0,
-										RuleIdx:  0,
-										Source:   httpsHR1,
+										MatchIdx:     0,
+										RuleIdx:      0,
+										UpstreamName: fooUpstreamName,
+										Source:       httpsHR1,
 									},
 								},
 							},
@@ -484,6 +554,7 @@ func TestBuildConfiguration(t *testing.T) {
 						SSL:      &SSL{CertificatePath: secretPath},
 					},
 				},
+				Upstreams: []Upstream{fooUpstream},
 			},
 			msg: "two https listeners each with routes for different hostnames",
 		},
@@ -527,6 +598,9 @@ func TestBuildConfiguration(t *testing.T) {
 					{Namespace: "test", Name: "https-hr-3"}: httpsRouteHR3,
 					{Namespace: "test", Name: "https-hr-4"}: httpsRouteHR4,
 				},
+				Backends: map[backendService]backend{
+					fooBackendSvc: fooBackend,
+				},
 			},
 			expected: Configuration{
 				HTTPServers: []VirtualServer{
@@ -537,14 +611,16 @@ func TestBuildConfiguration(t *testing.T) {
 								Path: "/",
 								MatchRules: []MatchRule{
 									{
-										MatchIdx: 0,
-										RuleIdx:  0,
-										Source:   hr3,
+										MatchIdx:     0,
+										RuleIdx:      0,
+										UpstreamName: fooUpstreamName,
+										Source:       hr3,
 									},
 									{
-										MatchIdx: 0,
-										RuleIdx:  1,
-										Source:   hr4,
+										MatchIdx:     0,
+										RuleIdx:      1,
+										UpstreamName: fooUpstreamName,
+										Source:       hr4,
 									},
 								},
 							},
@@ -552,9 +628,10 @@ func TestBuildConfiguration(t *testing.T) {
 								Path: "/fourth",
 								MatchRules: []MatchRule{
 									{
-										MatchIdx: 0,
-										RuleIdx:  0,
-										Source:   hr4,
+										MatchIdx:     0,
+										RuleIdx:      0,
+										UpstreamName: fooUpstreamName,
+										Source:       hr4,
 									},
 								},
 							},
@@ -562,9 +639,10 @@ func TestBuildConfiguration(t *testing.T) {
 								Path: "/third",
 								MatchRules: []MatchRule{
 									{
-										MatchIdx: 0,
-										RuleIdx:  1,
-										Source:   hr3,
+										MatchIdx:     0,
+										RuleIdx:      1,
+										UpstreamName: fooUpstreamName,
+										Source:       hr3,
 									},
 								},
 							},
@@ -582,14 +660,16 @@ func TestBuildConfiguration(t *testing.T) {
 								Path: "/",
 								MatchRules: []MatchRule{
 									{
-										MatchIdx: 0,
-										RuleIdx:  0,
-										Source:   httpsHR3,
+										MatchIdx:     0,
+										RuleIdx:      0,
+										UpstreamName: fooUpstreamName,
+										Source:       httpsHR3,
 									},
 									{
-										MatchIdx: 0,
-										RuleIdx:  1,
-										Source:   httpsHR4,
+										MatchIdx:     0,
+										RuleIdx:      1,
+										UpstreamName: fooUpstreamName,
+										Source:       httpsHR4,
 									},
 								},
 							},
@@ -597,9 +677,10 @@ func TestBuildConfiguration(t *testing.T) {
 								Path: "/fourth",
 								MatchRules: []MatchRule{
 									{
-										MatchIdx: 0,
-										RuleIdx:  0,
-										Source:   httpsHR4,
+										MatchIdx:     0,
+										RuleIdx:      0,
+										UpstreamName: fooUpstreamName,
+										Source:       httpsHR4,
 									},
 								},
 							},
@@ -607,9 +688,10 @@ func TestBuildConfiguration(t *testing.T) {
 								Path: "/third",
 								MatchRules: []MatchRule{
 									{
-										MatchIdx: 0,
-										RuleIdx:  1,
-										Source:   httpsHR3,
+										MatchIdx:     0,
+										RuleIdx:      1,
+										UpstreamName: fooUpstreamName,
+										Source:       httpsHR3,
 									},
 								},
 							},
@@ -620,6 +702,7 @@ func TestBuildConfiguration(t *testing.T) {
 						SSL:      &SSL{CertificatePath: secretPath},
 					},
 				},
+				Upstreams: []Upstream{fooUpstream},
 			},
 			msg: "one http and one https listener with two routes with the same hostname with and without collisions",
 		},
@@ -672,6 +755,9 @@ func TestBuildConfiguration(t *testing.T) {
 				},
 				Routes: map[types.NamespacedName]*route{
 					{Namespace: "test", Name: "hr-1"}: routeHR1,
+				},
+				Backends: map[backendService]backend{
+					fooBackendSvc: fooBackend,
 				},
 			},
 			expected: Configuration{},
@@ -832,5 +918,74 @@ func TestGetListenerHostname(t *testing.T) {
 		if result != test.expected {
 			t.Errorf("getListenerHostname() returned %q but expected %q for the case of %q", result, test.expected, test.msg)
 		}
+	}
+}
+
+func TestBuildUpstreams(t *testing.T) {
+
+	fooEndpoints := []Endpoint{
+		{
+			Address: "10.0.0.0",
+			Port:    8080,
+		},
+		{
+			Address: "10.0.0.1",
+			Port:    8080,
+		},
+		{
+			Address: "10.0.0.2",
+			Port:    8080,
+		},
+	}
+
+	barEndpoints := []Endpoint{
+		{
+			Address: "11.0.0.0",
+			Port:    80,
+		},
+		{
+			Address: "11.0.0.1",
+			Port:    80,
+		},
+		{
+			Address: "11.0.0.2",
+			Port:    80,
+		},
+		{
+			Address: "11.0.0.3",
+			Port:    80,
+		},
+	}
+
+	backends := map[backendService]backend{
+		backendService{name: "foo", namespace: "test", port: 80}:              {Endpoints: fooEndpoints},
+		backendService{name: "bar", namespace: "test", port: 8080}:            {Endpoints: barEndpoints},
+		backendService{name: "nil-endpoints", namespace: "test", port: 443}:   {Endpoints: nil},
+		backendService{name: "empty-endpoints", namespace: "test", port: 443}: {Endpoints: []Endpoint{}},
+	}
+
+	expUpstreams := []Upstream{
+		{Name: "test_foo_80", Endpoints: fooEndpoints},
+		{Name: "test_bar_8080", Endpoints: barEndpoints},
+		{Name: "test_nil-endpoints_443", Endpoints: nil},
+		{Name: "test_empty-endpoints_443", Endpoints: nil},
+	}
+
+	upstreams := buildUpstreams(backends)
+
+	if diff := helpers.Diff(expUpstreams, upstreams); diff != "" {
+		t.Errorf("buildUpstreams() returned incorrect Upstreams, diff: %+v", diff)
+	}
+}
+
+func TestGenerateUpstreamName(t *testing.T) {
+	// empty backend service
+	if name := generateUpstreamName(backendService{}); name != InvalidBackendRef {
+		t.Errorf("generateUpstreamName() returned unexepected name: %s, expected: %s", name, InvalidBackendRef)
+	}
+
+	expName := "test_foo_9090"
+	if name := generateUpstreamName(backendService{name: "foo", namespace: "test", port: 9090}); name != expName {
+		t.Errorf("generateUpstreamName() returned unexepected name: %s, expected: %s", name, expName)
 	}
 }

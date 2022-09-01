@@ -3,9 +3,12 @@ package state_test
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	apiv1 "k8s.io/api/core/v1"
+	discoveryV1 "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/gateway-api/apis/v1alpha2"
 	"sigs.k8s.io/gateway-api/apis/v1beta1"
 
@@ -14,24 +17,133 @@ import (
 	"github.com/nginxinc/nginx-kubernetes-gateway/internal/state/statefakes"
 )
 
+const (
+	controllerName  = "my.controller"
+	gcName          = "test-class"
+	certificatePath = "path/to/cert"
+)
+
+func createRoute(name string, gateway string, hostname string, backendRefs ...v1beta1.HTTPBackendRef) *v1beta1.HTTPRoute {
+	return &v1beta1.HTTPRoute{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "test",
+			Name:      name,
+		},
+		Spec: v1beta1.HTTPRouteSpec{
+			CommonRouteSpec: v1beta1.CommonRouteSpec{
+				ParentRefs: []v1beta1.ParentReference{
+					{
+						Namespace:   (*v1beta1.Namespace)(helpers.GetStringPointer("test")),
+						Name:        v1beta1.ObjectName(gateway),
+						SectionName: (*v1beta1.SectionName)(helpers.GetStringPointer("listener-80-1")),
+					},
+					{
+						Namespace:   (*v1beta1.Namespace)(helpers.GetStringPointer("test")),
+						Name:        v1beta1.ObjectName(gateway),
+						SectionName: (*v1beta1.SectionName)(helpers.GetStringPointer("listener-443-1")),
+					},
+				},
+			},
+			Hostnames: []v1beta1.Hostname{
+				v1beta1.Hostname(hostname),
+			},
+			Rules: []v1beta1.HTTPRouteRule{
+				{
+					Matches: []v1beta1.HTTPRouteMatch{
+						{
+							Path: &v1beta1.HTTPPathMatch{
+								Value: helpers.GetStringPointer("/"),
+							},
+						},
+					},
+					BackendRefs: backendRefs,
+				},
+			},
+		},
+	}
+}
+
+func createGateway(name string) *v1beta1.Gateway {
+	return &v1beta1.Gateway{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace:  "test",
+			Name:       name,
+			Generation: 1,
+		},
+		Spec: v1beta1.GatewaySpec{
+			GatewayClassName: gcName,
+			Listeners: []v1beta1.Listener{
+				{
+					Name:     "listener-80-1",
+					Hostname: nil,
+					Port:     80,
+					Protocol: v1beta1.HTTPProtocolType,
+				},
+			},
+		},
+	}
+}
+
+func createGatewayWithTLSListener(name string) *v1beta1.Gateway {
+	gw := createGateway(name)
+
+	l := v1beta1.Listener{
+		Name:     "listener-443-1",
+		Hostname: nil,
+		Port:     443,
+		Protocol: v1beta1.HTTPSProtocolType,
+		TLS: &v1beta1.GatewayTLSConfig{
+			Mode: helpers.GetTLSModePointer(v1beta1.TLSModeTerminate),
+			CertificateRefs: []v1beta1.SecretObjectReference{
+				{
+					Kind:      (*v1beta1.Kind)(helpers.GetStringPointer("Secret")),
+					Name:      "secret",
+					Namespace: (*v1beta1.Namespace)(helpers.GetStringPointer("test")),
+				},
+			},
+		},
+	}
+	gw.Spec.Listeners = append(gw.Spec.Listeners, l)
+
+	return gw
+}
+
+func createRouteWithMultipleRules(name, gateway, hostname string, rules []v1beta1.HTTPRouteRule) *v1beta1.HTTPRoute {
+	hr := createRoute(name, gateway, hostname)
+	hr.Spec.Rules = rules
+
+	return hr
+}
+
+func createHTTPRule(path string, backendRefs ...v1beta1.HTTPBackendRef) v1beta1.HTTPRouteRule {
+	return v1beta1.HTTPRouteRule{
+		Matches: []v1beta1.HTTPRouteMatch{
+			{
+				Path: &v1beta1.HTTPPathMatch{
+					Value: &path,
+				},
+			},
+		},
+		BackendRefs: backendRefs,
+	}
+}
+
+func createBackendRef(kind *v1beta1.Kind, name v1beta1.ObjectName, namespace *v1beta1.Namespace) v1beta1.HTTPBackendRef {
+	return v1beta1.HTTPBackendRef{
+		BackendRef: v1beta1.BackendRef{
+			BackendObjectReference: v1beta1.BackendObjectReference{
+				Kind:      kind,
+				Name:      name,
+				Namespace: namespace,
+			},
+		},
+	}
+}
+
 // FIXME(kate-osborn): Consider refactoring these tests to reduce code duplication.
 var _ = Describe("ChangeProcessor", func() {
 	Describe("Normal cases of processing changes", func() {
-		const (
-			controllerName  = "my.controller"
-			gcName          = "test-class"
-			certificatePath = "path/to/cert"
-		)
-
 		var (
-			gc, gcUpdated        *v1beta1.GatewayClass
-			hr1, hr1Updated, hr2 *v1beta1.HTTPRoute
-			gw1, gw1Updated, gw2 *v1beta1.Gateway
-			processor            state.ChangeProcessor
-			fakeSecretMemoryMgr  *statefakes.FakeSecretDiskMemoryManager
-		)
-
-		BeforeEach(OncePerOrdered, func() {
 			gc = &v1beta1.GatewayClass{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       gcName,
@@ -41,112 +153,47 @@ var _ = Describe("ChangeProcessor", func() {
 					ControllerName: controllerName,
 				},
 			}
+			processor           state.ChangeProcessor
+			fakeSecretMemoryMgr *statefakes.FakeSecretDiskMemoryManager
+		)
 
-			gcUpdated = gc.DeepCopy()
-			gcUpdated.Generation++
-
-			createRoute := func(name string, gateway string, hostname string) *v1beta1.HTTPRoute {
-				return &v1beta1.HTTPRoute{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: "test",
-						Name:      name,
-					},
-					Spec: v1beta1.HTTPRouteSpec{
-						CommonRouteSpec: v1beta1.CommonRouteSpec{
-							ParentRefs: []v1beta1.ParentReference{
-								{
-									Namespace:   (*v1beta1.Namespace)(helpers.GetStringPointer("test")),
-									Name:        v1beta1.ObjectName(gateway),
-									SectionName: (*v1beta1.SectionName)(helpers.GetStringPointer("listener-80-1")),
-								},
-								{
-									Namespace:   (*v1beta1.Namespace)(helpers.GetStringPointer("test")),
-									Name:        v1beta1.ObjectName(gateway),
-									SectionName: (*v1beta1.SectionName)(helpers.GetStringPointer("listener-443-1")),
-								},
-							},
-						},
-						Hostnames: []v1beta1.Hostname{
-							v1beta1.Hostname(hostname),
-						},
-						Rules: []v1beta1.HTTPRouteRule{
-							{
-								Matches: []v1beta1.HTTPRouteMatch{
-									{
-										Path: &v1beta1.HTTPPathMatch{
-											Value: helpers.GetStringPointer("/"),
-										},
-									},
-								},
-							},
-						},
-					},
-				}
-			}
-
-			hr1 = createRoute("hr-1", "gateway-1", "foo.example.com")
-
-			hr1Updated = hr1.DeepCopy()
-			hr1Updated.Generation++
-
-			hr2 = createRoute("hr-2", "gateway-2", "bar.example.com")
-
-			createGateway := func(name string) *v1beta1.Gateway {
-				return &v1beta1.Gateway{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace:  "test",
-						Name:       name,
-						Generation: 1,
-					},
-					Spec: v1beta1.GatewaySpec{
-						GatewayClassName: gcName,
-						Listeners: []v1beta1.Listener{
-							{
-								Name:     "listener-80-1",
-								Hostname: nil,
-								Port:     80,
-								Protocol: v1beta1.HTTPProtocolType,
-							},
-							{
-								Name:     "listener-443-1",
-								Hostname: nil,
-								Port:     443,
-								Protocol: v1beta1.HTTPSProtocolType,
-								TLS: &v1beta1.GatewayTLSConfig{
-									Mode: helpers.GetTLSModePointer(v1beta1.TLSModeTerminate),
-									CertificateRefs: []v1beta1.SecretObjectReference{
-										{
-											Kind:      (*v1beta1.Kind)(helpers.GetStringPointer("Secret")),
-											Name:      "secret",
-											Namespace: (*v1beta1.Namespace)(helpers.GetStringPointer("test")),
-										},
-									},
-								},
-							},
-						},
-					},
-				}
-			}
-
-			gw1 = createGateway("gateway-1")
-
-			gw1Updated = gw1.DeepCopy()
-			gw1Updated.Generation++
-
-			gw2 = createGateway("gateway-2")
-
+		BeforeEach(OncePerOrdered, func() {
 			fakeSecretMemoryMgr = &statefakes.FakeSecretDiskMemoryManager{}
 
 			processor = state.NewChangeProcessorImpl(state.ChangeProcessorConfig{
 				GatewayCtlrName:     controllerName,
 				GatewayClassName:    gcName,
 				SecretMemoryManager: fakeSecretMemoryMgr,
+				Logger:              zap.New(),
 			})
 
 			fakeSecretMemoryMgr.RequestReturns(certificatePath, nil)
 		})
 
-		Describe("Process resources", Ordered, func() {
+		Describe("Process gateway resources", Ordered, func() {
+			var (
+				gcUpdated            *v1beta1.GatewayClass
+				hr1, hr1Updated, hr2 *v1beta1.HTTPRoute
+				gw1, gw1Updated, gw2 *v1beta1.Gateway
+			)
+			BeforeAll(func() {
+				gcUpdated = gc.DeepCopy()
+				gcUpdated.Generation++
+
+				hr1 = createRoute("hr-1", "gateway-1", "foo.example.com")
+
+				hr1Updated = hr1.DeepCopy()
+				hr1Updated.Generation++
+
+				hr2 = createRoute("hr-2", "gateway-2", "bar.example.com")
+
+				gw1 = createGatewayWithTLSListener("gateway-1")
+
+				gw1Updated = gw1.DeepCopy()
+				gw1Updated.Generation++
+
+				gw2 = createGatewayWithTLSListener("gateway-2")
+			})
 			When("no upsert has occurred", func() {
 				It("should return empty configuration and statuses", func() {
 					changed, conf, statuses := processor.Process()
@@ -221,9 +268,10 @@ var _ = Describe("ChangeProcessor", func() {
 									Path: "/",
 									MatchRules: []state.MatchRule{
 										{
-											MatchIdx: 0,
-											RuleIdx:  0,
-											Source:   hr1,
+											MatchIdx:     0,
+											RuleIdx:      0,
+											UpstreamName: state.InvalidBackendRef,
+											Source:       hr1,
 										},
 									},
 								},
@@ -239,9 +287,10 @@ var _ = Describe("ChangeProcessor", func() {
 									Path: "/",
 									MatchRules: []state.MatchRule{
 										{
-											MatchIdx: 0,
-											RuleIdx:  0,
-											Source:   hr1,
+											MatchIdx:     0,
+											RuleIdx:      0,
+											UpstreamName: state.InvalidBackendRef,
+											Source:       hr1,
 										},
 									},
 								},
@@ -252,6 +301,7 @@ var _ = Describe("ChangeProcessor", func() {
 							SSL:      &state.SSL{CertificatePath: certificatePath},
 						},
 					},
+					Upstreams: []state.Upstream{},
 				}
 
 				expectedStatuses := state.Statuses{
@@ -312,9 +362,10 @@ var _ = Describe("ChangeProcessor", func() {
 									Path: "/",
 									MatchRules: []state.MatchRule{
 										{
-											MatchIdx: 0,
-											RuleIdx:  0,
-											Source:   hr1Updated,
+											MatchIdx:     0,
+											RuleIdx:      0,
+											UpstreamName: state.InvalidBackendRef,
+											Source:       hr1Updated,
 										},
 									},
 								},
@@ -330,9 +381,10 @@ var _ = Describe("ChangeProcessor", func() {
 									Path: "/",
 									MatchRules: []state.MatchRule{
 										{
-											MatchIdx: 0,
-											RuleIdx:  0,
-											Source:   hr1Updated,
+											MatchIdx:     0,
+											RuleIdx:      0,
+											UpstreamName: state.InvalidBackendRef,
+											Source:       hr1Updated,
 										},
 									},
 								},
@@ -343,6 +395,7 @@ var _ = Describe("ChangeProcessor", func() {
 							SSL:      &state.SSL{CertificatePath: certificatePath},
 						},
 					},
+					Upstreams: []state.Upstream{},
 				}
 				expectedStatuses := state.Statuses{
 					GatewayClassStatus: &state.GatewayClassStatus{
@@ -402,9 +455,10 @@ var _ = Describe("ChangeProcessor", func() {
 									Path: "/",
 									MatchRules: []state.MatchRule{
 										{
-											MatchIdx: 0,
-											RuleIdx:  0,
-											Source:   hr1Updated,
+											MatchIdx:     0,
+											RuleIdx:      0,
+											UpstreamName: state.InvalidBackendRef,
+											Source:       hr1Updated,
 										},
 									},
 								},
@@ -420,9 +474,10 @@ var _ = Describe("ChangeProcessor", func() {
 									Path: "/",
 									MatchRules: []state.MatchRule{
 										{
-											MatchIdx: 0,
-											RuleIdx:  0,
-											Source:   hr1Updated,
+											MatchIdx:     0,
+											RuleIdx:      0,
+											UpstreamName: state.InvalidBackendRef,
+											Source:       hr1Updated,
 										},
 									},
 								},
@@ -433,6 +488,7 @@ var _ = Describe("ChangeProcessor", func() {
 							SSL:      &state.SSL{CertificatePath: certificatePath},
 						},
 					},
+					Upstreams: []state.Upstream{},
 				}
 				expectedStatuses := state.Statuses{
 					GatewayClassStatus: &state.GatewayClassStatus{
@@ -492,9 +548,10 @@ var _ = Describe("ChangeProcessor", func() {
 									Path: "/",
 									MatchRules: []state.MatchRule{
 										{
-											MatchIdx: 0,
-											RuleIdx:  0,
-											Source:   hr1Updated,
+											MatchIdx:     0,
+											RuleIdx:      0,
+											UpstreamName: state.InvalidBackendRef,
+											Source:       hr1Updated,
 										},
 									},
 								},
@@ -510,9 +567,10 @@ var _ = Describe("ChangeProcessor", func() {
 									Path: "/",
 									MatchRules: []state.MatchRule{
 										{
-											MatchIdx: 0,
-											RuleIdx:  0,
-											Source:   hr1Updated,
+											MatchIdx:     0,
+											RuleIdx:      0,
+											UpstreamName: state.InvalidBackendRef,
+											Source:       hr1Updated,
 										},
 									},
 								},
@@ -523,6 +581,7 @@ var _ = Describe("ChangeProcessor", func() {
 							SSL:      &state.SSL{CertificatePath: certificatePath},
 						},
 					},
+					Upstreams: []state.Upstream{},
 				}
 				expectedStatuses := state.Statuses{
 					GatewayClassStatus: &state.GatewayClassStatus{
@@ -579,9 +638,10 @@ var _ = Describe("ChangeProcessor", func() {
 									Path: "/",
 									MatchRules: []state.MatchRule{
 										{
-											MatchIdx: 0,
-											RuleIdx:  0,
-											Source:   hr1Updated,
+											MatchIdx:     0,
+											RuleIdx:      0,
+											UpstreamName: state.InvalidBackendRef,
+											Source:       hr1Updated,
 										},
 									},
 								},
@@ -596,9 +656,10 @@ var _ = Describe("ChangeProcessor", func() {
 									Path: "/",
 									MatchRules: []state.MatchRule{
 										{
-											MatchIdx: 0,
-											RuleIdx:  0,
-											Source:   hr1Updated,
+											MatchIdx:     0,
+											RuleIdx:      0,
+											UpstreamName: state.InvalidBackendRef,
+											Source:       hr1Updated,
 										},
 									},
 								},
@@ -612,6 +673,7 @@ var _ = Describe("ChangeProcessor", func() {
 							SSL:      &state.SSL{CertificatePath: certificatePath},
 						},
 					},
+					Upstreams: []state.Upstream{},
 				}
 				expectedStatuses := state.Statuses{
 					GatewayClassStatus: &state.GatewayClassStatus{
@@ -664,9 +726,10 @@ var _ = Describe("ChangeProcessor", func() {
 									Path: "/",
 									MatchRules: []state.MatchRule{
 										{
-											MatchIdx: 0,
-											RuleIdx:  0,
-											Source:   hr1Updated,
+											MatchIdx:     0,
+											RuleIdx:      0,
+											UpstreamName: state.InvalidBackendRef,
+											Source:       hr1Updated,
 										},
 									},
 								},
@@ -682,9 +745,10 @@ var _ = Describe("ChangeProcessor", func() {
 									Path: "/",
 									MatchRules: []state.MatchRule{
 										{
-											MatchIdx: 0,
-											RuleIdx:  0,
-											Source:   hr1Updated,
+											MatchIdx:     0,
+											RuleIdx:      0,
+											UpstreamName: state.InvalidBackendRef,
+											Source:       hr1Updated,
 										},
 									},
 								},
@@ -695,6 +759,7 @@ var _ = Describe("ChangeProcessor", func() {
 							SSL:      &state.SSL{CertificatePath: certificatePath},
 						},
 					},
+					Upstreams: []state.Upstream{},
 				}
 				expectedStatuses := state.Statuses{
 					GatewayClassStatus: &state.GatewayClassStatus{
@@ -753,9 +818,10 @@ var _ = Describe("ChangeProcessor", func() {
 									Path: "/",
 									MatchRules: []state.MatchRule{
 										{
-											MatchIdx: 0,
-											RuleIdx:  0,
-											Source:   hr2,
+											MatchIdx:     0,
+											RuleIdx:      0,
+											UpstreamName: state.InvalidBackendRef,
+											Source:       hr2,
 										},
 									},
 								},
@@ -771,9 +837,10 @@ var _ = Describe("ChangeProcessor", func() {
 									Path: "/",
 									MatchRules: []state.MatchRule{
 										{
-											MatchIdx: 0,
-											RuleIdx:  0,
-											Source:   hr2,
+											MatchIdx:     0,
+											RuleIdx:      0,
+											UpstreamName: state.InvalidBackendRef,
+											Source:       hr2,
 										},
 									},
 								},
@@ -784,6 +851,7 @@ var _ = Describe("ChangeProcessor", func() {
 							SSL:      &state.SSL{CertificatePath: certificatePath},
 						},
 					},
+					Upstreams: []state.Upstream{},
 				}
 				expectedStatuses := state.Statuses{
 					GatewayClassStatus: &state.GatewayClassStatus{
@@ -831,6 +899,7 @@ var _ = Describe("ChangeProcessor", func() {
 							SSL:      &state.SSL{CertificatePath: certificatePath},
 						},
 					},
+					Upstreams: []state.Upstream{},
 				}
 				expectedStatuses := state.Statuses{
 					GatewayClassStatus: &state.GatewayClassStatus{
@@ -916,6 +985,215 @@ var _ = Describe("ChangeProcessor", func() {
 				Expect(changed).To(BeTrue())
 				Expect(helpers.Diff(expectedConf, conf)).To(BeEmpty())
 				Expect(helpers.Diff(expectedStatuses, statuses)).To(BeEmpty())
+			})
+		})
+		Describe("Process services and endpoints", Ordered, func() {
+			var (
+				hr1, hr2, hr3, hrInvalidBackendRef, hrMultipleRules                                       *v1beta1.HTTPRoute
+				hr1svc, sharedSvc, bazSvc1, bazSvc2, bazSvc3, invalidSvc, notRefSvc                       *apiv1.Service
+				hr1SvcEndpointSlice1, hr1SvcEndpointSlice2, notRefEndpointSlice, invalidKindEndpointSlice *discoveryV1.EndpointSlice
+			)
+
+			createSvc := func(name string) *apiv1.Service {
+				return &apiv1.Service{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace:  "test",
+						Name:       name,
+						Generation: 1,
+					},
+				}
+			}
+
+			createEndpointSlice := func(name string, owners ...metav1.OwnerReference) *discoveryV1.EndpointSlice {
+				return &discoveryV1.EndpointSlice{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace:       "test",
+						Name:            name,
+						OwnerReferences: owners,
+					},
+				}
+			}
+
+			svcToOwnerRef := func(svc *apiv1.Service) metav1.OwnerReference {
+				return metav1.OwnerReference{
+					Kind: "Service",
+					Name: svc.Name,
+				}
+			}
+
+			BeforeAll(func() {
+				testNamespace := v1beta1.Namespace("test")
+				kindService := v1beta1.Kind("Service")
+				kindInvalid := v1beta1.Kind("Invalid")
+				// backend Refs
+				fooRef := createBackendRef(&kindService, "foo-svc", &testNamespace)
+				barRef := createBackendRef(&kindService, "bar-svc", nil) // nil namespace should inherit namespace from route
+				baz1Ref := createBackendRef(&kindService, "baz-svc-v1", &testNamespace)
+				baz2Ref := createBackendRef(&kindService, "baz-svc-v2", &testNamespace)
+				baz3Ref := createBackendRef(&kindService, "baz-svc-v3", &testNamespace)
+				invalidRef := createBackendRef(&kindInvalid, "bar-svc", &testNamespace) // invalid kind
+
+				// httproutes
+				hr1 = createRoute("hr1", "gw", "foo.example.com", fooRef)
+				hr2 = createRoute("hr2", "gw", "bar.example.com", barRef)
+				hr3 = createRoute("hr3", "gw", "bar.2.example.com", barRef) // shares backend ref with hr2
+				hrInvalidBackendRef = createRoute("hr-invalid", "gw", "invalid.example.com", invalidRef)
+				hrMultipleRules = createRouteWithMultipleRules(
+					"hr-multiple-rules",
+					"gw",
+					"mutli.example.com",
+					[]v1beta1.HTTPRouteRule{
+						createHTTPRule("/baz-v1", baz1Ref),
+						createHTTPRule("/baz-v2", baz2Ref),
+						createHTTPRule("/baz-v3", baz3Ref),
+					},
+				)
+
+				// services
+				hr1svc = createSvc("foo-svc")
+				sharedSvc = createSvc("bar-svc")  // shared between hr2 and hr3
+				invalidSvc = createSvc("invalid") // nsname matches invalid BackendRef
+				notRefSvc = createSvc("not-ref")
+				bazSvc1 = createSvc("baz-svc-v1")
+				bazSvc2 = createSvc("baz-svc-v2")
+				bazSvc3 = createSvc("baz-svc-v3")
+
+				// endpoint slices
+				hr1SvcEndpointSlice1 = createEndpointSlice("hr1-1", metav1.OwnerReference{Kind: "Service", Name: "not-ref"}, svcToOwnerRef(hr1svc))
+				hr1SvcEndpointSlice2 = createEndpointSlice("hr1-2", svcToOwnerRef(hr1svc))
+				invalidKindEndpointSlice = createEndpointSlice("invalid-kind", metav1.OwnerReference{Kind: "Invalid", Name: "foo-svc"}) // same name as hr1svc but invalid Kind.
+				notRefEndpointSlice = createEndpointSlice(
+					"not-ref",
+					metav1.OwnerReference{Kind: "Service", Name: "not-ref"},
+					metav1.OwnerReference{Kind: "Service", Name: "another-not-ref"},
+				)
+
+			})
+
+			testProcessChangedVal := func(expChanged bool) {
+				changed, _, _ := processor.Process()
+				Expect(changed).To(Equal(expChanged))
+			}
+
+			testUpsertTriggersChange := func(obj client.Object, expChanged bool) {
+				processor.CaptureUpsertChange(obj)
+				testProcessChangedVal(expChanged)
+			}
+
+			testDeleteTriggersChange := func(obj client.Object, nsname types.NamespacedName, expChanged bool) {
+				processor.CaptureDeleteChange(obj, nsname)
+				testProcessChangedVal(expChanged)
+			}
+
+			It("add hr1", func() {
+				testUpsertTriggersChange(hr1, true)
+			})
+			It("add service for hr1", func() {
+				testUpsertTriggersChange(hr1svc, true)
+			})
+			It("add endpoint slice for hr1", func() {
+				testUpsertTriggersChange(hr1SvcEndpointSlice1, true)
+			})
+			It("update for service for hr1", func() {
+				testUpsertTriggersChange(hr1svc, true)
+			})
+			It("add second endpoint slice for hr1", func() {
+				testUpsertTriggersChange(hr1SvcEndpointSlice2, true)
+			})
+			It("add endpoint slice with invalid kind", func() {
+				testUpsertTriggersChange(invalidKindEndpointSlice, false)
+			})
+			It("delete one endpoint slice for hr1", func() {
+				testDeleteTriggersChange(hr1SvcEndpointSlice1, types.NamespacedName{Namespace: hr1SvcEndpointSlice1.Namespace, Name: hr1SvcEndpointSlice1.Name}, true)
+			})
+			It("delete second endpoint slice for hr1", func() {
+				testDeleteTriggersChange(hr1SvcEndpointSlice2, types.NamespacedName{Namespace: hr1SvcEndpointSlice2.Namespace, Name: hr1SvcEndpointSlice2.Name}, true)
+			})
+			It("recreate second endpoint slice for hr1", func() {
+				testUpsertTriggersChange(hr1SvcEndpointSlice2, true)
+			})
+			It("delete hr1", func() {
+				testDeleteTriggersChange(hr1, types.NamespacedName{Namespace: hr1.Namespace, Name: hr1.Name}, true)
+			})
+			It("delete service for hr1", func() {
+				testDeleteTriggersChange(hr1svc, types.NamespacedName{Namespace: hr1svc.Namespace, Name: hr1svc.Name}, false)
+			})
+			It("delete second endpoint slice for hr1", func() {
+				testDeleteTriggersChange(hr1SvcEndpointSlice2, types.NamespacedName{Namespace: hr1SvcEndpointSlice2.Namespace, Name: hr1SvcEndpointSlice2.Name}, false)
+			})
+			It("add hr2", func() {
+				testUpsertTriggersChange(hr2, true)
+			})
+			It("add hr3 -- a route that shares a backend service with hr2", func() {
+				testUpsertTriggersChange(hr3, true)
+			})
+			It("add service referenced by both hr2 and hr3", func() {
+				testUpsertTriggersChange(sharedSvc, true)
+			})
+			It("delete hr2", func() {
+				testDeleteTriggersChange(hr2, types.NamespacedName{Namespace: hr2.Namespace, Name: hr2.Name}, true)
+			})
+			It("delete shared service", func() {
+				testDeleteTriggersChange(sharedSvc, types.NamespacedName{Namespace: sharedSvc.Namespace, Name: sharedSvc.Name}, true)
+			})
+			It("recreate shared service", func() {
+				testUpsertTriggersChange(sharedSvc, true)
+			})
+			It("delete hr3", func() {
+				testDeleteTriggersChange(hr3, types.NamespacedName{Namespace: hr3.Namespace, Name: hr3.Name}, true)
+			})
+			It("delete shared service", func() {
+				testDeleteTriggersChange(sharedSvc, types.NamespacedName{Namespace: sharedSvc.Namespace, Name: sharedSvc.Name}, false)
+			})
+			It("add service that is not referenced by any route", func() {
+				testUpsertTriggersChange(notRefSvc, false)
+			})
+			It("add route with an invalid backend ref type", func() {
+				testUpsertTriggersChange(hrInvalidBackendRef, true)
+			})
+			It("add service with a namespace name that matches invalid backend ref (should be ignored)", func() {
+				testUpsertTriggersChange(invalidSvc, false)
+			})
+			It("add endpoint slice that is not owned by a referenced service", func() {
+				testUpsertTriggersChange(notRefEndpointSlice, false)
+			})
+			It("delete endpoint slice that is not owned by a referenced service", func() {
+				testDeleteTriggersChange(notRefEndpointSlice, types.NamespacedName{Namespace: notRefEndpointSlice.Namespace, Name: notRefEndpointSlice.Name}, false)
+			})
+			When("processing a route with multiple rules and three unique backend services", func() {
+				It("adds route", func() {
+					testUpsertTriggersChange(hrMultipleRules, true)
+				})
+				It("adds one referenced service", func() {
+					testUpsertTriggersChange(bazSvc1, true)
+				})
+				It("adds second referenced service", func() {
+					testUpsertTriggersChange(bazSvc2, true)
+				})
+				It("deletes first referenced service", func() {
+					testDeleteTriggersChange(bazSvc1, types.NamespacedName{Namespace: bazSvc1.Namespace, Name: bazSvc1.Name}, true)
+				})
+				It("recreates first referenced service", func() {
+					testUpsertTriggersChange(bazSvc1, true)
+				})
+				It("adds third referenced service", func() {
+					testUpsertTriggersChange(bazSvc3, true)
+				})
+				It("updates third referenced service", func() {
+					testUpsertTriggersChange(bazSvc3, true)
+				})
+				It("deletes route with multiple services", func() {
+					testDeleteTriggersChange(hrMultipleRules, types.NamespacedName{Namespace: hrMultipleRules.Namespace, Name: hrMultipleRules.Name}, true)
+				})
+				It("deletes first service", func() {
+					testDeleteTriggersChange(bazSvc1, types.NamespacedName{Namespace: bazSvc1.Namespace, Name: bazSvc1.Name}, false)
+				})
+				It("deletes second service", func() {
+					testDeleteTriggersChange(bazSvc2, types.NamespacedName{Namespace: bazSvc2.Namespace, Name: bazSvc2.Name}, false)
+				})
+				It("deletes final service", func() {
+					testDeleteTriggersChange(bazSvc3, types.NamespacedName{Namespace: bazSvc3.Namespace, Name: bazSvc3.Name}, false)
+				})
 			})
 		})
 	})

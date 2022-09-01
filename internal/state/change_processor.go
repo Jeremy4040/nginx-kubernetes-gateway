@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/go-logr/logr"
+	v1 "k8s.io/api/core/v1"
+	discoveryV1 "k8s.io/api/discovery/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/gateway-api/apis/v1beta1"
@@ -37,6 +40,10 @@ type ChangeProcessorConfig struct {
 	GatewayClassName string
 	// SecretMemoryManager is the secret memory manager.
 	SecretMemoryManager SecretDiskMemoryManager
+	// ServiceStore is the service store.
+	ServiceStore ServiceStore
+	// Logger is the logger for this Change Processor.
+	Logger logr.Logger
 }
 
 // ChangeProcessorImpl is an implementation of ChangeProcessor.
@@ -97,6 +104,19 @@ func (c *ChangeProcessorImpl) CaptureUpsertChange(obj client.Object) {
 			resourceChanged = false
 		}
 		c.store.httpRoutes[getNamespacedName(obj)] = o
+		c.updateServicesMap(o)
+	case *v1.Service:
+		// We only need to trigger an update when the service exists in the store.
+		_, exist := c.store.services[getNamespacedName(obj)]
+		if !exist {
+			resourceChanged = false
+		}
+	case *discoveryV1.EndpointSlice:
+		if c.updateNeededForEndpointSlice(o) {
+			c.store.endpointSlices[getNamespacedName(obj)] = o
+		} else {
+			resourceChanged = false
+		}
 	default:
 		panic(fmt.Errorf("ChangeProcessor doesn't support %T", obj))
 	}
@@ -104,11 +124,84 @@ func (c *ChangeProcessorImpl) CaptureUpsertChange(obj client.Object) {
 	c.storeChanged = c.storeChanged || resourceChanged
 }
 
+// FIXME(pleshakov): for now, we only support a single backend reference
+func getBackendServiceNamesFromRoute(hr *v1beta1.HTTPRoute) []types.NamespacedName {
+	svcNames := make([]types.NamespacedName, 0, len(hr.Spec.Rules))
+
+	for _, rule := range hr.Spec.Rules {
+		if len(rule.BackendRefs) == 0 {
+			continue
+		}
+		ref := rule.BackendRefs[0].BackendRef
+
+		if ref.Kind != nil && *ref.Kind != "Service" {
+			continue
+		}
+
+		ns := hr.Namespace
+		if ref.Namespace != nil {
+			ns = string(*ref.Namespace)
+		}
+
+		svcNames = append(svcNames, types.NamespacedName{Namespace: ns, Name: string(ref.Name)})
+	}
+
+	return svcNames
+}
+
+func (c *ChangeProcessorImpl) updateServicesMap(hr *v1beta1.HTTPRoute) {
+	svcNames := getBackendServiceNamesFromRoute(hr)
+
+	for _, svcNsname := range svcNames {
+		existingRoutesForSvc, exist := c.store.services[svcNsname]
+		if !exist {
+			c.store.services[svcNsname] = map[types.NamespacedName]struct{}{getNamespacedName(hr): {}}
+			continue
+		}
+
+		existingRoutesForSvc[getNamespacedName(hr)] = struct{}{}
+	}
+}
+
+// We only need to update the config if the endpoint slice is owned by a service we have in the store.
+func (c *ChangeProcessorImpl) updateNeededForEndpointSlice(endpointSlice *discoveryV1.EndpointSlice) bool {
+	for _, ownerRef := range endpointSlice.OwnerReferences {
+
+		if ownerRef.Kind != "Service" {
+			continue
+		}
+
+		svcNsname := types.NamespacedName{
+			Namespace: endpointSlice.Namespace,
+			Name:      ownerRef.Name,
+		}
+
+		if _, exist := c.store.services[svcNsname]; exist {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (c *ChangeProcessorImpl) removeRouteFromServicesMap(hr *v1beta1.HTTPRoute) {
+	backendServiceNames := getBackendServiceNamesFromRoute(hr)
+	for _, svcName := range backendServiceNames {
+		routesForSvc, exist := c.store.services[svcName]
+		if exist {
+			delete(routesForSvc, getNamespacedName(hr))
+			if len(routesForSvc) == 0 {
+				delete(c.store.services, svcName)
+			}
+		}
+	}
+}
+
 func (c *ChangeProcessorImpl) CaptureDeleteChange(resourceType client.Object, nsname types.NamespacedName) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	c.storeChanged = true
+	resourceChanged := true
 
 	switch resourceType.(type) {
 	case *v1beta1.GatewayClass:
@@ -119,10 +212,25 @@ func (c *ChangeProcessorImpl) CaptureDeleteChange(resourceType client.Object, ns
 	case *v1beta1.Gateway:
 		delete(c.store.gateways, nsname)
 	case *v1beta1.HTTPRoute:
+		if r, exists := c.store.httpRoutes[nsname]; exists {
+			c.removeRouteFromServicesMap(r)
+		}
 		delete(c.store.httpRoutes, nsname)
+	case *v1.Service:
+		// We only need to trigger an update when the service exists in the store.
+		if _, exist := c.store.services[nsname]; !exist {
+			resourceChanged = false
+		}
+	case *discoveryV1.EndpointSlice:
+		es, exist := c.store.endpointSlices[nsname]
+		resourceChanged = exist && c.updateNeededForEndpointSlice(es)
+
+		delete(c.store.endpointSlices, nsname)
 	default:
 		panic(fmt.Errorf("ChangeProcessor doesn't support %T", resourceType))
 	}
+
+	c.storeChanged = c.storeChanged || resourceChanged
 }
 
 func (c *ChangeProcessorImpl) Process() (changed bool, conf Configuration, statuses Statuses) {
@@ -135,12 +243,24 @@ func (c *ChangeProcessorImpl) Process() (changed bool, conf Configuration, statu
 
 	c.storeChanged = false
 
-	graph := buildGraph(
+	graph, warnings := buildGraph(
 		c.store,
 		c.cfg.GatewayCtlrName,
 		c.cfg.GatewayClassName,
 		c.cfg.SecretMemoryManager,
+		c.cfg.ServiceStore,
 	)
+
+	for obj, objWarnings := range warnings {
+		for _, w := range objWarnings {
+			// FIXME(pleshakov): report warnings via Object status
+			c.cfg.Logger.Info("Got warning while building graph",
+				"kind", obj.GetObjectKind().GroupVersionKind().Kind,
+				"namespace", obj.GetNamespace(),
+				"name", obj.GetName(),
+				"warning", w)
+		}
+	}
 
 	conf = buildConfiguration(graph)
 	statuses = buildStatuses(graph)

@@ -99,25 +99,14 @@ func (h *EventHandlerImpl) updateNginx(ctx context.Context, conf state.Configura
 		return err
 	}
 
-	cfg, warnings := h.cfg.Generator.Generate(conf)
+	cfg := h.cfg.Generator.Generate(conf)
 
-	// For now, we keep all http servers in one config
+	// For now, we keep all http servers and upstreams in one config file.
 	// We might rethink that. For example, we can write each server to its file
 	// or group servers in some way.
-	err = h.cfg.NginxFileMgr.WriteHTTPServersConfig("http-servers", cfg)
+	err = h.cfg.NginxFileMgr.WriteHTTPConfig("http", cfg)
 	if err != nil {
 		return err
-	}
-
-	for obj, objWarnings := range warnings {
-		for _, w := range objWarnings {
-			// FIXME(pleshakov): report warnings via Object status
-			h.cfg.Logger.Info("Got warning while generating config",
-				"kind", obj.GetObjectKind().GroupVersionKind().Kind,
-				"namespace", obj.GetNamespace(),
-				"name", obj.GetName(),
-				"warning", w)
-		}
 	}
 
 	return h.cfg.NginxRuntimeMgr.Reload(ctx)

@@ -1,6 +1,7 @@
 package state
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 
@@ -28,6 +29,8 @@ type route struct {
 	ValidSectionNameRefs map[string]struct{}
 	// ValidSectionNameRefs includes the sectionNames from the parentRefs of the HTTPRoute that are invalid.
 	InvalidSectionNameRefs map[string]struct{}
+	// BackendServices
+	BackendServices map[ruleIndex]backendService
 }
 
 // gatewayClass represents the GatewayClass resource.
@@ -38,6 +41,18 @@ type gatewayClass struct {
 	Valid bool
 	// ErrorMsg explains the error when the resource is not valid.
 	ErrorMsg string
+}
+
+type ruleIndex int
+
+type backendService struct {
+	name      string
+	namespace string
+	port      int32
+}
+
+type backend struct {
+	Endpoints []Endpoint
 }
 
 // graph is a graph-like representation of Gateway API resources.
@@ -52,6 +67,8 @@ type graph struct {
 	IgnoredGateways map[types.NamespacedName]*v1beta1.Gateway
 	// Routes holds route resources.
 	Routes map[types.NamespacedName]*route
+	// Backends
+	Backends map[backendService]backend
 }
 
 // buildGraph builds a graph from a store assuming that the Gateway resource has the gwNsName namespace and name.
@@ -60,7 +77,8 @@ func buildGraph(
 	controllerName string,
 	gcName string,
 	secretMemoryMgr SecretDiskMemoryManager,
-) *graph {
+	serviceStore ServiceStore,
+) (*graph, Warnings) {
 	gc := buildGatewayClass(store.gc, controllerName)
 
 	gw, ignoredGws := processGateways(store.gateways, gcName)
@@ -75,10 +93,13 @@ func buildGraph(
 		}
 	}
 
+	backends, warnings := resolveBackends(routes, serviceStore)
+
 	g := &graph{
 		GatewayClass:    gc,
 		Routes:          routes,
 		IgnoredGateways: ignoredGws,
+		Backends:        backends,
 	}
 
 	if gw != nil {
@@ -88,7 +109,70 @@ func buildGraph(
 		}
 	}
 
-	return g
+	return g, warnings
+}
+
+func resolveBackends(
+	routes map[types.NamespacedName]*route,
+	serviceStore ServiceStore,
+) (map[backendService]backend, Warnings) {
+	warnings := newWarnings()
+	backends := make(map[backendService]backend)
+
+	for _, r := range routes {
+
+		backendServicesForRoute := make(map[ruleIndex]backendService)
+
+		for i := range r.Source.Spec.Rules {
+
+			backendSvc, err := getBackendServiceForRouteRule(r.Source, i)
+			backendServicesForRoute[ruleIndex(i)] = backendSvc
+
+			if err != nil {
+				warnings.AddWarningf(r.Source, "invalid backend ref for rule %d: %s", i, err.Error())
+
+				continue
+			}
+
+			if _, exist := backends[backendSvc]; !exist {
+				endpoints, err := serviceStore.Resolve(types.NamespacedName{Namespace: backendSvc.namespace, Name: backendSvc.name}, backendSvc.port)
+				if err != nil {
+					warnings.AddWarningf(r.Source, "cannot resolve backend service for rule %d: %s", i, err.Error())
+				}
+
+				backends[backendSvc] = backend{Endpoints: endpoints}
+			}
+		}
+
+		r.BackendServices = backendServicesForRoute
+	}
+
+	return backends, warnings
+}
+
+func getBackendServiceForRouteRule(route *v1beta1.HTTPRoute, ruleIdx int) (backendService, error) {
+	if len(route.Spec.Rules[ruleIdx].BackendRefs) == 0 {
+		return backendService{}, errors.New("no backend refs provided")
+	}
+
+	ref := route.Spec.Rules[ruleIdx].BackendRefs[0]
+	if ref.Kind != nil && *ref.Kind != "Service" {
+		return backendService{}, fmt.Errorf("backend ref Kind must be \"Service\"; got %s", *ref.Kind)
+	}
+
+	if ref.Namespace != nil && string(*ref.Namespace) != route.Namespace {
+		return backendService{}, fmt.Errorf("cross-namespace routing is not permitted; Service namespace must match the http route namespace %s", route.Namespace)
+	}
+
+	if ref.Port == nil {
+		return backendService{}, errors.New("port is missing")
+	}
+
+	return backendService{
+		name:      string(ref.Name),
+		namespace: route.Namespace,
+		port:      int32(*ref.Port),
+	}, nil
 }
 
 // processGateways determines which Gateway resource the NGINX Gateway will use (the winner) and which Gateway(s) will
