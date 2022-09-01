@@ -1067,7 +1067,6 @@ var _ = Describe("ChangeProcessor", func() {
 					metav1.OwnerReference{Kind: "Service", Name: "not-ref"},
 					metav1.OwnerReference{Kind: "Service", Name: "another-not-ref"},
 				)
-
 			})
 
 			testProcessChangedVal := func(expChanged bool) {

@@ -34,7 +34,6 @@ func NewGeneratorImpl() *GeneratorImpl {
 }
 
 func (g *GeneratorImpl) Generate(conf state.Configuration) []byte {
-
 	httpServers := generateHTTPServers(conf)
 
 	httpUpstreams := generateHTTPUpstreams(conf.Upstreams)

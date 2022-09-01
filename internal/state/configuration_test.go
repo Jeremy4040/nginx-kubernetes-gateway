@@ -922,7 +922,6 @@ func TestGetListenerHostname(t *testing.T) {
 }
 
 func TestBuildUpstreams(t *testing.T) {
-
 	fooEndpoints := []Endpoint{
 		{
 			Address: "10.0.0.0",
@@ -958,10 +957,10 @@ func TestBuildUpstreams(t *testing.T) {
 	}
 
 	backends := map[backendService]backend{
-		backendService{Name: "foo", Namespace: "test", Port: 80}:              {Endpoints: fooEndpoints},
-		backendService{Name: "bar", Namespace: "test", Port: 8080}:            {Endpoints: barEndpoints},
-		backendService{Name: "nil-endpoints", Namespace: "test", Port: 443}:   {Endpoints: nil},
-		backendService{Name: "empty-endpoints", Namespace: "test", Port: 443}: {Endpoints: []Endpoint{}},
+		{Name: "foo", Namespace: "test", Port: 80}:              {Endpoints: fooEndpoints},
+		{Name: "bar", Namespace: "test", Port: 8080}:            {Endpoints: barEndpoints},
+		{Name: "nil-endpoints", Namespace: "test", Port: 443}:   {Endpoints: nil},
+		{Name: "empty-endpoints", Namespace: "test", Port: 443}: {Endpoints: []Endpoint{}},
 	}
 
 	expUpstreams := []Upstream{

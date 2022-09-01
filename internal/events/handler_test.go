@@ -150,7 +150,8 @@ var _ = Describe("EventHandler", func() {
 			batch := []interface{}{
 				&events.UpsertEvent{
 					Resource: secret,
-				}}
+				},
+			}
 
 			handler.HandleEventBatch(context.TODO(), batch)
 
@@ -167,7 +168,8 @@ var _ = Describe("EventHandler", func() {
 				&events.DeleteEvent{
 					NamespacedName: nsname,
 					Type:           &apiv1.Secret{},
-				}}
+				},
+			}
 
 			handler.HandleEventBatch(context.TODO(), batch)
 

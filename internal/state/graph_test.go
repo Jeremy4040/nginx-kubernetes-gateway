@@ -201,7 +201,8 @@ func TestBuildGraph(t *testing.T) {
 				Name:      "foo",
 				Namespace: "test",
 				Port:      80,
-			}},
+			},
+		},
 	}
 
 	routeHR3 := &route{
@@ -215,7 +216,8 @@ func TestBuildGraph(t *testing.T) {
 				Name:      "foo",
 				Namespace: "test",
 				Port:      80,
-			}},
+			},
+		},
 	}
 
 	// add test secret to store
@@ -1232,7 +1234,8 @@ func TestGetBackendServiceFromRouteRule(t *testing.T) {
 						refs[0].BackendRef.Kind = (*v1beta1.Kind)(helpers.GetStringPointer("NotService"))
 						return refs
 					},
-				)},
+				),
+			},
 			expSvc: backendService{},
 			expErr: true,
 			msg:    "not a service kind",
@@ -1244,7 +1247,8 @@ func TestGetBackendServiceFromRouteRule(t *testing.T) {
 						refs[0].BackendRef.Namespace = (*v1beta1.Namespace)(helpers.GetStringPointer("not-test"))
 						return refs
 					},
-				)},
+				),
+			},
 			expSvc: backendService{},
 			expErr: true,
 			msg:    "invalid namespace",
@@ -1256,7 +1260,8 @@ func TestGetBackendServiceFromRouteRule(t *testing.T) {
 						refs[0].BackendRef.Port = nil
 						return refs
 					},
-				)},
+				),
+			},
 			expSvc: backendService{},
 			expErr: true,
 			msg:    "missing port",

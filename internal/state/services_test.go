@@ -238,7 +238,6 @@ var _ = Describe("ServiceStore", func() {
 })
 
 func TestCalculateEndpointSliceCapacity(t *testing.T) {
-
 	addresses := []string{"10.0.0.1", "10.0.0.2", "10.0.0.3"}
 
 	readyEndpoint1 := discoveryV1.Endpoint{

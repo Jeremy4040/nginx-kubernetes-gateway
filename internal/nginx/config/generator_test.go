@@ -45,12 +45,10 @@ func TestGenerate(t *testing.T) {
 
 	if !strings.Contains(string(cfg), "listen 443") {
 		t.Errorf("Generate() did not generate a config with an SSL server; config: %s", string(cfg))
-
 	}
 
 	if !strings.Contains(string(cfg), "upstream") {
 		t.Errorf("Generate() did not generate a config with an upstream block; config: %s", string(cfg))
-
 	}
 }
 

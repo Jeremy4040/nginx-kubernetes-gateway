@@ -9,24 +9,24 @@ import (
 	"github.com/nginxinc/nginx-kubernetes-gateway/internal/events"
 )
 
-type endpointSliceImplementation struct {
+type EndpointSliceImplementation struct {
 	conf    config.Config
 	eventCh chan<- interface{}
 }
 
 // NewEndpointSliceImplementation creates a new EndpointSliceImplementation.
-func NewEndpointSliceImplementation(cfg config.Config, eventCh chan<- interface{}) *endpointSliceImplementation {
-	return &endpointSliceImplementation{
+func NewEndpointSliceImplementation(cfg config.Config, eventCh chan<- interface{}) *EndpointSliceImplementation {
+	return &EndpointSliceImplementation{
 		conf:    cfg,
 		eventCh: eventCh,
 	}
 }
 
-func (impl *endpointSliceImplementation) Logger() logr.Logger {
+func (impl *EndpointSliceImplementation) Logger() logr.Logger {
 	return impl.conf.Logger
 }
 
-func (impl *endpointSliceImplementation) Upsert(endpSlice *discoveryV1.EndpointSlice) {
+func (impl *EndpointSliceImplementation) Upsert(endpSlice *discoveryV1.EndpointSlice) {
 	impl.Logger().Info("Endpoint Slice was upserted",
 		"namespace", endpSlice.Namespace, "name", endpSlice.Name,
 	)
@@ -36,7 +36,7 @@ func (impl *endpointSliceImplementation) Upsert(endpSlice *discoveryV1.EndpointS
 	}
 }
 
-func (impl *endpointSliceImplementation) Remove(nsname types.NamespacedName) {
+func (impl *EndpointSliceImplementation) Remove(nsname types.NamespacedName) {
 	impl.Logger().Info("Endpoint Slice resource was removed",
 		"namespace", nsname.Namespace, "name", nsname.Name,
 	)

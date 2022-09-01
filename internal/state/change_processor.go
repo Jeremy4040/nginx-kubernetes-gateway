@@ -82,41 +82,15 @@ func (c *ChangeProcessorImpl) CaptureUpsertChange(obj client.Object) {
 
 	switch o := obj.(type) {
 	case *v1beta1.GatewayClass:
-		if o.Name != c.cfg.GatewayClassName {
-			panic(fmt.Errorf("gatewayclass resource must be %s, got %s", c.cfg.GatewayClassName, o.Name))
-		}
-		// if the resource spec hasn't changed (its generation is the same), ignore the upsert
-		if c.store.gc != nil && c.store.gc.Generation == o.Generation {
-			resourceChanged = false
-		}
-		c.store.gc = o
+		resourceChanged = c.captureGatewayClassChange(o)
 	case *v1beta1.Gateway:
-		// if the resource spec hasn't changed (its generation is the same), ignore the upsert
-		prev, exist := c.store.gateways[getNamespacedName(obj)]
-		if exist && o.Generation == prev.Generation {
-			resourceChanged = false
-		}
-		c.store.gateways[getNamespacedName(obj)] = o
+		resourceChanged = c.captureGatewayChange(o)
 	case *v1beta1.HTTPRoute:
-		// if the resource spec hasn't changed (its generation is the same), ignore the upsert
-		prev, exist := c.store.httpRoutes[getNamespacedName(obj)]
-		if exist && o.Generation == prev.Generation {
-			resourceChanged = false
-		}
-		c.store.httpRoutes[getNamespacedName(obj)] = o
-		c.updateServicesMap(o)
+		resourceChanged = c.captureHTTPRouteChange(o)
 	case *v1.Service:
-		// We only need to trigger an update when the service exists in the store.
-		_, exist := c.store.services[getNamespacedName(obj)]
-		if !exist {
-			resourceChanged = false
-		}
+		resourceChanged = c.captureServiceChange(o)
 	case *discoveryV1.EndpointSlice:
-		if c.updateNeededForEndpointSlice(o) {
-			c.store.endpointSlices[getNamespacedName(obj)] = o
-		} else {
-			resourceChanged = false
-		}
+		resourceChanged = c.captureEndpointSliceChange(o)
 	default:
 		panic(fmt.Errorf("ChangeProcessor doesn't support %T", obj))
 	}
@@ -124,29 +98,64 @@ func (c *ChangeProcessorImpl) CaptureUpsertChange(obj client.Object) {
 	c.storeChanged = c.storeChanged || resourceChanged
 }
 
-// FIXME(pleshakov): for now, we only support a single backend reference
-func getBackendServiceNamesFromRoute(hr *v1beta1.HTTPRoute) []types.NamespacedName {
-	svcNames := make([]types.NamespacedName, 0, len(hr.Spec.Rules))
+func (c *ChangeProcessorImpl) captureGatewayClassChange(gc *v1beta1.GatewayClass) bool {
+	resourceChanged := true
 
-	for _, rule := range hr.Spec.Rules {
-		if len(rule.BackendRefs) == 0 {
-			continue
-		}
-		ref := rule.BackendRefs[0].BackendRef
-
-		if ref.Kind != nil && *ref.Kind != "Service" {
-			continue
-		}
-
-		ns := hr.Namespace
-		if ref.Namespace != nil {
-			ns = string(*ref.Namespace)
-		}
-
-		svcNames = append(svcNames, types.NamespacedName{Namespace: ns, Name: string(ref.Name)})
+	if gc.Name != c.cfg.GatewayClassName {
+		panic(fmt.Errorf("gatewayclass resource must be %s, got %s", c.cfg.GatewayClassName, gc.Name))
 	}
 
-	return svcNames
+	// if the resource spec hasn't changed (its generation is the same), ignore the upsert
+	if c.store.gc != nil && c.store.gc.Generation == gc.Generation {
+		resourceChanged = false
+	}
+
+	c.store.gc = gc
+
+	return resourceChanged
+}
+
+func (c *ChangeProcessorImpl) captureGatewayChange(gw *v1beta1.Gateway) bool {
+	resourceChanged := true
+	// if the resource spec hasn't changed (its generation is the same), ignore the upsert
+	prev, exist := c.store.gateways[getNamespacedName(gw)]
+	if exist && gw.Generation == prev.Generation {
+		resourceChanged = false
+	}
+	c.store.gateways[getNamespacedName(gw)] = gw
+
+	return resourceChanged
+}
+
+func (c *ChangeProcessorImpl) captureHTTPRouteChange(hr *v1beta1.HTTPRoute) bool {
+	resourceChanged := true
+
+	// if the resource spec hasn't changed (its generation is the same), ignore the upsert
+	prev, exist := c.store.httpRoutes[getNamespacedName(hr)]
+	if exist && hr.Generation == prev.Generation {
+		resourceChanged = false
+	}
+	c.store.httpRoutes[getNamespacedName(hr)] = hr
+	c.updateServicesMap(hr)
+
+	return resourceChanged
+}
+
+func (c *ChangeProcessorImpl) captureServiceChange(svc *v1.Service) bool {
+	// We only need to trigger an update when the service exists in the store.
+	_, exist := c.store.services[getNamespacedName(svc)]
+
+	return exist
+}
+
+func (c *ChangeProcessorImpl) captureEndpointSliceChange(es *discoveryV1.EndpointSlice) bool {
+	if c.updateNeededForEndpointSlice(es) {
+		c.store.endpointSlices[getNamespacedName(es)] = es
+
+		return true
+	}
+
+	return false
 }
 
 func (c *ChangeProcessorImpl) updateServicesMap(hr *v1beta1.HTTPRoute) {
@@ -266,4 +275,29 @@ func (c *ChangeProcessorImpl) Process() (changed bool, conf Configuration, statu
 	statuses = buildStatuses(graph)
 
 	return true, conf, statuses
+}
+
+// FIXME(pleshakov): for now, we only support a single backend reference
+func getBackendServiceNamesFromRoute(hr *v1beta1.HTTPRoute) []types.NamespacedName {
+	svcNames := make([]types.NamespacedName, 0, len(hr.Spec.Rules))
+
+	for _, rule := range hr.Spec.Rules {
+		if len(rule.BackendRefs) == 0 {
+			continue
+		}
+		ref := rule.BackendRefs[0].BackendRef
+
+		if ref.Kind != nil && *ref.Kind != "Service" {
+			continue
+		}
+
+		ns := hr.Namespace
+		if ref.Namespace != nil {
+			ns = string(*ref.Namespace)
+		}
+
+		svcNames = append(svcNames, types.NamespacedName{Namespace: ns, Name: string(ref.Name)})
+	}
+
+	return svcNames
 }

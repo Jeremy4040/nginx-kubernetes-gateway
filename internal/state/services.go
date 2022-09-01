@@ -36,27 +36,27 @@ type ServiceStore interface {
 }
 
 // NewServiceStore creates a new ServiceStore.
-func NewServiceStore(k8sClient client.Client) *serviceStoreImpl {
-	return &serviceStoreImpl{
+func NewServiceStore(k8sClient client.Client) *ServiceStoreImpl {
+	return &ServiceStoreImpl{
 		services:  make(map[string]*v1.Service),
 		k8sClient: k8sClient,
 	}
 }
 
-type serviceStoreImpl struct {
+type ServiceStoreImpl struct {
 	services  map[string]*v1.Service
 	k8sClient client.Client
 }
 
-func (s *serviceStoreImpl) Upsert(svc *v1.Service) {
+func (s *ServiceStoreImpl) Upsert(svc *v1.Service) {
 	s.services[getResourceKey(&svc.ObjectMeta)] = svc
 }
 
-func (s *serviceStoreImpl) Delete(nsname types.NamespacedName) {
+func (s *ServiceStoreImpl) Delete(nsname types.NamespacedName) {
 	delete(s.services, nsname.String())
 }
 
-func (s *serviceStoreImpl) Resolve(nsname types.NamespacedName, port int32) ([]Endpoint, error) {
+func (s *ServiceStoreImpl) Resolve(nsname types.NamespacedName, port int32) ([]Endpoint, error) {
 	svc, exist := s.services[nsname.String()]
 	if !exist {
 		return nil, fmt.Errorf("Service %s doesn't exist", nsname)
@@ -85,7 +85,7 @@ func getTargetPort(svc *v1.Service, svcPort int32) int32 {
 	return 0
 }
 
-func (s *serviceStoreImpl) resolveEndpoints(svc *v1.Service, targetPort int32) ([]Endpoint, error) {
+func (s *ServiceStoreImpl) resolveEndpoints(svc *v1.Service, targetPort int32) ([]Endpoint, error) {
 	var endpointSliceList discoveryV1.EndpointSliceList
 
 	err := s.k8sClient.List(context.TODO(), &endpointSliceList, client.MatchingLabels{k8sServiceNameLabel: svc.Name})
