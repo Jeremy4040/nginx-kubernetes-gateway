@@ -16,17 +16,17 @@ type templateExecutor struct {
 }
 
 func newTemplateExecutor() *templateExecutor {
-	httpT, err := template.New("server").Parse(httpServersTemplate)
+	serverTemplate, err := template.New("servers").Parse(httpServersTemplate)
 	if err != nil {
 		panic(fmt.Errorf("failed to parse http servers template: %w", err))
 	}
 
-	upstreamT, err := template.New("server").Parse(httpUpstreamsTemplate)
+	upstreamTemplate, err := template.New("upstreams").Parse(httpUpstreamsTemplate)
 	if err != nil {
 		panic(fmt.Errorf("failed to parse upstream template: %w", err))
 	}
 
-	return &templateExecutor{httpServersTemplate: httpT, httpUpstreamsTemplate: upstreamT}
+	return &templateExecutor{httpServersTemplate: serverTemplate, httpUpstreamsTemplate: upstreamTemplate}
 }
 
 func (e *templateExecutor) ExecuteForHTTP(servers httpServers) []byte {
