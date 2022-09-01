@@ -15,18 +15,42 @@ func TestExecuteForServer(t *testing.T) {
 				Locations: []location{
 					{
 						Path:      "/",
-						ProxyPass: "http://10.0.0.1",
+						ProxyPass: "http://example-upstream",
 					},
 				},
 			},
 		},
 	}
 
-	cfg := executor.ExecuteForHTTPServers(servers)
+	cfg := executor.ExecuteForHTTP(servers)
 	// we only do a sanity check here.
 	// the config generation logic is tested in the Generator tests.
 	if len(cfg) == 0 {
-		t.Error("ExecuteForServer() returned 0-length config")
+		t.Error("ExecuteForHTTP() returned 0-length config")
+	}
+}
+
+func TestExecuteForUpstreams(t *testing.T) {
+	executor := newTemplateExecutor()
+
+	upstreams := httpUpstreams{
+		Upstreams: []upstream{
+			{
+				Name: "example-upstream",
+				Servers: []upstreamServer{
+					{
+						Address: "http://10.0.0.1:80",
+					},
+				},
+			},
+		},
+	}
+
+	cfg := executor.ExecuteForUpstreams(upstreams)
+	// we only do a sanity check here.
+	// the config generation logic is tested in the Generator tests.
+	if len(cfg) == 0 {
+		t.Error("ExecuteForUpstreams() returned 0-length config")
 	}
 }
 
@@ -46,7 +70,7 @@ func TestExecuteForServerPanics(t *testing.T) {
 	defer func() {
 		r := recover()
 		if r == nil {
-			t.Error("ExecuteForServer() didn't panic")
+			t.Error("ExecuteForHTTP() didn't panic")
 		}
 	}()
 
@@ -57,5 +81,23 @@ func TestExecuteForServerPanics(t *testing.T) {
 
 	executor := &templateExecutor{httpServersTemplate: tmpl}
 
-	_ = executor.ExecuteForHTTPServers(httpServers{})
+	_ = executor.ExecuteForHTTP(httpServers{})
+}
+
+func TestExecuteForUpstreamsPanics(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Error("ExecuteForUpstreams() didn't panic")
+		}
+	}()
+
+	tmpl, err := template.New("test").Parse("{{ .NonExistingField }}")
+	if err != nil {
+		t.Fatalf("Failed to parse template: %v", err)
+	}
+
+	executor := &templateExecutor{httpUpstreamsTemplate: tmpl}
+
+	_ = executor.ExecuteForUpstreams(httpUpstreams{})
 }
