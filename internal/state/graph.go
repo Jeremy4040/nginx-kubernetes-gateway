@@ -29,7 +29,7 @@ type route struct {
 	ValidSectionNameRefs map[string]struct{}
 	// ValidSectionNameRefs includes the sectionNames from the parentRefs of the HTTPRoute that are invalid.
 	InvalidSectionNameRefs map[string]struct{}
-	// BackendServices
+	// BackendServices maps HTTPRouteRules to their backend Service.
 	BackendServices map[ruleIndex]backendService
 }
 
@@ -43,15 +43,20 @@ type gatewayClass struct {
 	ErrorMsg string
 }
 
+// ruleIndex is the index of the HTTPRouteRule.
 type ruleIndex int
 
 type backendService struct {
-	Name      string
+	// Name is the name of the Kubernetes Service.
+	Name string
+	// Namespace is the namespace of the Kubernetes Service.
 	Namespace string
-	Port      int32
+	// Port is the desired port of the Kubernetes Service.
+	Port int32
 }
 
 type backend struct {
+	// Endpoints are the endpoints for the backend.
 	Endpoints []Endpoint
 
 	// ErrorMsg explains the error when the backend is not valid
@@ -70,7 +75,7 @@ type graph struct {
 	IgnoredGateways map[types.NamespacedName]*v1beta1.Gateway
 	// Routes holds route resources.
 	Routes map[types.NamespacedName]*route
-	// Backends
+	// Backends holds all the backend services referenced by http routes.
 	Backends map[backendService]backend
 }
 

@@ -20,8 +20,10 @@ const k8sServiceNameLabel = "kubernetes.io/service-name"
 
 // Endpoint is the internal representation of a Kubernetes endpoint.
 type Endpoint struct {
+	// Address is the IP address of the endpoint.
 	Address string
-	Port    int32
+	// Port is the port of the endpoint.
+	Port int32
 }
 
 // ServiceStore stores services and can be queried for the endpoints of a service.

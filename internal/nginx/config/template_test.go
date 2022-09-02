@@ -5,7 +5,7 @@ import (
 	"text/template"
 )
 
-func TestExecuteForServer(t *testing.T) {
+func TestExecuteForHTTPServers(t *testing.T) {
 	executor := newTemplateExecutor()
 
 	servers := httpServers{
@@ -22,15 +22,15 @@ func TestExecuteForServer(t *testing.T) {
 		},
 	}
 
-	cfg := executor.ExecuteForHTTP(servers)
+	cfg := executor.ExecuteForHTTPServers(servers)
 	// we only do a sanity check here.
 	// the config generation logic is tested in the Generator tests.
 	if len(cfg) == 0 {
-		t.Error("ExecuteForHTTP() returned 0-length config")
+		t.Error("ExecuteForHTTPServers() returned 0-length config")
 	}
 }
 
-func TestExecuteForUpstreams(t *testing.T) {
+func TestExecuteForHTTPUpstreams(t *testing.T) {
 	executor := newTemplateExecutor()
 
 	upstreams := httpUpstreams{
@@ -46,11 +46,11 @@ func TestExecuteForUpstreams(t *testing.T) {
 		},
 	}
 
-	cfg := executor.ExecuteForUpstreams(upstreams)
+	cfg := executor.ExecuteForHTTPUpstreams(upstreams)
 	// we only do a sanity check here.
 	// the config generation logic is tested in the Generator tests.
 	if len(cfg) == 0 {
-		t.Error("ExecuteForUpstreams() returned 0-length config")
+		t.Error("ExecuteForHTTPUpstreams() returned 0-length config")
 	}
 }
 
@@ -66,11 +66,11 @@ func TestNewTemplateExecutorPanics(t *testing.T) {
 	newTemplateExecutor()
 }
 
-func TestExecuteForServerPanics(t *testing.T) {
+func TestExecuteForHTTPServersPanics(t *testing.T) {
 	defer func() {
 		r := recover()
 		if r == nil {
-			t.Error("ExecuteForHTTP() didn't panic")
+			t.Error("ExecuteForHTTPServers() didn't panic")
 		}
 	}()
 
@@ -81,14 +81,14 @@ func TestExecuteForServerPanics(t *testing.T) {
 
 	executor := &templateExecutor{httpServersTemplate: tmpl}
 
-	_ = executor.ExecuteForHTTP(httpServers{})
+	_ = executor.ExecuteForHTTPServers(httpServers{})
 }
 
-func TestExecuteForUpstreamsPanics(t *testing.T) {
+func TestExecuteForHTTPUpstreamsPanics(t *testing.T) {
 	defer func() {
 		r := recover()
 		if r == nil {
-			t.Error("ExecuteForUpstreams() didn't panic")
+			t.Error("ExecuteForHTTPUpstreams() didn't panic")
 		}
 	}()
 
@@ -99,5 +99,5 @@ func TestExecuteForUpstreamsPanics(t *testing.T) {
 
 	executor := &templateExecutor{httpUpstreamsTemplate: tmpl}
 
-	_ = executor.ExecuteForUpstreams(httpUpstreams{})
+	_ = executor.ExecuteForHTTPUpstreams(httpUpstreams{})
 }

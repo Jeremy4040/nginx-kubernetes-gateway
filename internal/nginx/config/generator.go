@@ -38,7 +38,7 @@ func (g *GeneratorImpl) Generate(conf state.Configuration) []byte {
 
 	httpUpstreams := generateHTTPUpstreams(conf.Upstreams)
 
-	retVal := append(g.executor.ExecuteForUpstreams(httpUpstreams), g.executor.ExecuteForHTTP(httpServers)...)
+	retVal := append(g.executor.ExecuteForHTTPUpstreams(httpUpstreams), g.executor.ExecuteForHTTPServers(httpServers)...)
 
 	return retVal
 }

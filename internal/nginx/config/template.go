@@ -16,20 +16,20 @@ type templateExecutor struct {
 }
 
 func newTemplateExecutor() *templateExecutor {
-	serverTemplate, err := template.New("servers").Parse(httpServersTemplate)
+	serverTemplate, err := template.New("http-servers").Parse(httpServersTemplate)
 	if err != nil {
 		panic(fmt.Errorf("failed to parse http servers template: %w", err))
 	}
 
-	upstreamTemplate, err := template.New("upstreams").Parse(httpUpstreamsTemplate)
+	upstreamTemplate, err := template.New("http-upstreams").Parse(httpUpstreamsTemplate)
 	if err != nil {
-		panic(fmt.Errorf("failed to parse upstream template: %w", err))
+		panic(fmt.Errorf("failed to parse http upstreams template: %w", err))
 	}
 
 	return &templateExecutor{httpServersTemplate: serverTemplate, httpUpstreamsTemplate: upstreamTemplate}
 }
 
-func (e *templateExecutor) ExecuteForHTTP(servers httpServers) []byte {
+func (e *templateExecutor) ExecuteForHTTPServers(servers httpServers) []byte {
 	var buf bytes.Buffer
 
 	err := e.httpServersTemplate.Execute(&buf, servers)
@@ -40,7 +40,7 @@ func (e *templateExecutor) ExecuteForHTTP(servers httpServers) []byte {
 	return buf.Bytes()
 }
 
-func (e *templateExecutor) ExecuteForUpstreams(upstreams httpUpstreams) []byte {
+func (e *templateExecutor) ExecuteForHTTPUpstreams(upstreams httpUpstreams) []byte {
 	var buf bytes.Buffer
 
 	err := e.httpUpstreamsTemplate.Execute(&buf, upstreams)
