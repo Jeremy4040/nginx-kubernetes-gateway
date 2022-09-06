@@ -2,13 +2,17 @@
 package state
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	v1 "k8s.io/api/core/v1"
+	discoveryV1 "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/gateway-api/apis/v1beta1"
 
@@ -76,6 +80,21 @@ var (
 	secretPath       = "/etc/nginx/secrets/test_secret"
 	secretsDirectory = "/etc/nginx/secrets"
 )
+
+func createFakeK8sClient(initialResources ...runtime.Object) (client.Client, error) {
+	scheme := runtime.NewScheme()
+	err := discoveryV1.AddToScheme(scheme)
+	if err != nil {
+		return nil, err
+	}
+
+	fakeK8sClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithRuntimeObjects(initialResources...).
+		Build()
+
+	return fakeK8sClient, nil
+}
 
 func TestBuildGraph(t *testing.T) {
 	const (
@@ -226,11 +245,10 @@ func TestBuildGraph(t *testing.T) {
 	secretMemoryMgr := NewSecretDiskMemoryManager(secretsDirectory, secretStore)
 
 	// create service store with fake k8s client
-	scheme := runtime.NewScheme()
-	_ = v1.AddToScheme(scheme)
-	fakeK8sClient := fake.NewClientBuilder().
-		WithScheme(scheme).
-		Build()
+	fakeK8sClient, err := createFakeK8sClient()
+	if err != nil {
+		t.Fatalf("failed to create fake k8s client: %v", err)
+	}
 	serviceStore := NewServiceStore(fakeK8sClient)
 
 	expected := &graph{
@@ -1283,4 +1301,175 @@ func TestGetBackendServiceFromRouteRule(t *testing.T) {
 			t.Errorf("getBackendServiceFromRouteRule() returned incorrect backend service for test case: %q, diff: %+v", tc.msg, diff)
 		}
 	}
+}
+
+func TestResolveBackends(t *testing.T) {
+	createEndpointSlice := func(name, serviceName string, address string) *discoveryV1.EndpointSlice {
+		return &discoveryV1.EndpointSlice{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: "test",
+				Labels: map[string]string{
+					"kubernetes.io/service-name": serviceName,
+				},
+			},
+			AddressType: discoveryV1.AddressTypeIPv4,
+			Endpoints: []discoveryV1.Endpoint{
+				{
+					Addresses: []string{address},
+					Conditions: discoveryV1.EndpointConditions{
+						Ready: helpers.GetBoolPointer(true),
+					},
+				},
+			},
+			Ports: []discoveryV1.EndpointPort{
+				{
+					Port: helpers.GetInt32Pointer(80),
+				},
+			},
+		}
+	}
+
+	svc1EndpointSlice := createEndpointSlice("svc1-es", "svc1", "10.0.0.0")
+	svc2EndpointSlice := createEndpointSlice("svc2-es", "svc2", "11.0.0.0")
+	svc3EndpointSlice := createEndpointSlice("svc3-es", "svc3", "12.0.0.0")
+
+	fakeK8sClient, err := createFakeK8sClient(svc1EndpointSlice, svc2EndpointSlice, svc3EndpointSlice)
+	if err != nil {
+		t.Fatalf("failed to create fake k8s client: %v", err)
+	}
+
+	createService := func(name string) *v1.Service {
+		return &v1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "test",
+				Name:      name,
+			},
+			Spec: v1.ServiceSpec{
+				Ports: []v1.ServicePort{
+					{
+						Port: 80,
+						TargetPort: intstr.IntOrString{
+							Type:   intstr.Int,
+							IntVal: 80,
+						},
+					},
+				},
+			},
+		}
+	}
+
+	serviceStore := NewServiceStore(fakeK8sClient)
+
+	serviceStore.Upsert(createService("svc1"))
+	serviceStore.Upsert(createService("svc2"))
+	serviceStore.Upsert(createService("svc3"))
+	serviceStore.Upsert(createService("svc4"))
+
+	createRoute := func(name string, serviceNames ...string) *v1beta1.HTTPRoute {
+		hr := &v1beta1.HTTPRoute{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "test",
+				Name:      "hr",
+			},
+		}
+
+		hr.Spec.Rules = make([]v1beta1.HTTPRouteRule, len(serviceNames))
+
+		for idx, svcName := range serviceNames {
+			hr.Spec.Rules[idx] = v1beta1.HTTPRouteRule{
+				BackendRefs: []v1beta1.HTTPBackendRef{
+					{
+						BackendRef: v1beta1.BackendRef{
+							BackendObjectReference: v1beta1.BackendObjectReference{
+								Kind:      (*v1beta1.Kind)(helpers.GetStringPointer("Service")),
+								Name:      v1beta1.ObjectName(svcName),
+								Namespace: (*v1beta1.Namespace)(helpers.GetStringPointer("test")),
+								Port:      (*v1beta1.PortNumber)(helpers.GetInt32Pointer(80)),
+							},
+						},
+					},
+				},
+			}
+		}
+		return hr
+	}
+
+	hr1 := createRoute("hr1", "svc1", "svc2", "svc3")
+	hr2 := createRoute("hr2", "svc1", "svc4")
+	hr3 := createRoute("hr3", "dne")
+
+	backendSvc1 := backendService{Name: "svc1", Namespace: "test", Port: 80}
+	backendSvc2 := backendService{Name: "svc2", Namespace: "test", Port: 80}
+	backendSvc3 := backendService{Name: "svc3", Namespace: "test", Port: 80}
+	backendSvc4 := backendService{Name: "svc4", Namespace: "test", Port: 80}
+	backendSvcDne := backendService{Name: "dne", Namespace: "test", Port: 80}
+
+	routes := map[types.NamespacedName]*route{
+		types.NamespacedName{Namespace: "test", Name: "hr1"}: {
+			Source: hr1,
+			BackendServices: map[ruleIndex]backendService{
+				ruleIndex(0): backendSvc1,
+				ruleIndex(1): backendSvc2,
+				ruleIndex(2): backendSvc3,
+			},
+		},
+		types.NamespacedName{Namespace: "test", Name: "hr2"}: {
+			Source: hr2,
+			BackendServices: map[ruleIndex]backendService{
+				ruleIndex(0): backendSvc1,
+				ruleIndex(1): backendSvc4,
+			},
+		},
+		types.NamespacedName{Namespace: "test", Name: "hr3"}: {
+			Source: hr3,
+			BackendServices: map[ruleIndex]backendService{
+				ruleIndex(0): backendSvcDne,
+			},
+		},
+	}
+
+	expResolvedBackends := map[backendService]backend{
+		backendSvc1: {Endpoints: []Endpoint{{Address: "10.0.0.0", Port: 80}}},
+		backendSvc2: {Endpoints: []Endpoint{{Address: "11.0.0.0", Port: 80}}},
+		backendSvc3: {Endpoints: []Endpoint{{Address: "12.0.0.0", Port: 80}}},
+	}
+
+	expErrorBackends := map[backendService]backend{
+		backendSvc4:   {ErrorMsg: "failed to resolve endpoints for Service test/svc4"},
+		backendSvcDne: {ErrorMsg: "Service test/dne doesn't exist"},
+	}
+
+	expWarnings := map[client.Object]string{
+		hr2: "cannot resolve backend ref for rule 1",
+		hr3: "cannot resolve backend ref for rule 0",
+	}
+
+	backends, warnings := resolveBackends(routes, serviceStore)
+
+	if len(warnings) != len(expWarnings) {
+		t.Errorf("resolveBackends() mismatch on warnings, expected %d warnings, got %d; warnings: %v", len(expWarnings), len(warnings), warnings)
+	}
+
+	for obj, warnSubString := range expWarnings {
+		warning := warnings[obj]
+		if len(warning) != 1 || !strings.Contains(warning[0], warnSubString) {
+			t.Errorf("resolveBackends() mismatch on warnings, expected warning[%s] to contain substring %s; got: %v", obj, warnSubString, warnings)
+		}
+	}
+
+	for expSvc, expBackend := range expResolvedBackends {
+		actualBackend := backends[expSvc]
+		if diff := cmp.Diff(expBackend, actualBackend); diff != "" {
+			t.Errorf("resolveBackends() mismatch on backend for backend service %v (-want +got):\n%s", expSvc, diff)
+		}
+	}
+
+	for expSvc, expBackend := range expErrorBackends {
+		actualBackend := backends[expSvc]
+		if !strings.Contains(actualBackend.ErrorMsg, expBackend.ErrorMsg) {
+			t.Errorf("resolveBackends() mismatch on error message for backend service %v; expected %s to contain %s", expSvc, actualBackend.ErrorMsg, expBackend.ErrorMsg)
+		}
+	}
+
 }
