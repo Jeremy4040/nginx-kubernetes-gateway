@@ -1366,7 +1366,7 @@ func TestResolveBackends(t *testing.T) {
 	serviceStore.Upsert(createService("svc3"))
 	serviceStore.Upsert(createService("svc4"))
 
-	createRoute := func(name string, serviceNames ...string) *v1beta1.HTTPRoute {
+	createRoute := func(name string, kind string, serviceNames ...string) *v1beta1.HTTPRoute {
 		hr := &v1beta1.HTTPRoute{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: "test",
@@ -1382,7 +1382,7 @@ func TestResolveBackends(t *testing.T) {
 					{
 						BackendRef: v1beta1.BackendRef{
 							BackendObjectReference: v1beta1.BackendObjectReference{
-								Kind:      (*v1beta1.Kind)(helpers.GetStringPointer("Service")),
+								Kind:      (*v1beta1.Kind)(helpers.GetStringPointer(kind)),
 								Name:      v1beta1.ObjectName(svcName),
 								Namespace: (*v1beta1.Namespace)(helpers.GetStringPointer("test")),
 								Port:      (*v1beta1.PortNumber)(helpers.GetInt32Pointer(80)),
@@ -1395,9 +1395,17 @@ func TestResolveBackends(t *testing.T) {
 		return hr
 	}
 
-	hr1 := createRoute("hr1", "svc1", "svc2", "svc3")
-	hr2 := createRoute("hr2", "svc1", "svc4")
-	hr3 := createRoute("hr3", "dne")
+	hr1 := createRoute("hr1", "Service", "svc1", "svc2", "svc3")
+	hr2 := createRoute("hr2", "Service", "svc1", "svc4")
+	hr3 := createRoute("hr3", "Service", "dne")
+	hr4 := createRoute("hr4", "NotService", "not-svc")
+
+	routes := map[types.NamespacedName]*route{
+		types.NamespacedName{Namespace: "test", Name: "hr1"}: {Source: hr1},
+		types.NamespacedName{Namespace: "test", Name: "hr2"}: {Source: hr2},
+		types.NamespacedName{Namespace: "test", Name: "hr3"}: {Source: hr3},
+		types.NamespacedName{Namespace: "test", Name: "hr4"}: {Source: hr4},
+	}
 
 	backendSvc1 := backendService{Name: "svc1", Namespace: "test", Port: 80}
 	backendSvc2 := backendService{Name: "svc2", Namespace: "test", Port: 80}
@@ -1405,50 +1413,31 @@ func TestResolveBackends(t *testing.T) {
 	backendSvc4 := backendService{Name: "svc4", Namespace: "test", Port: 80}
 	backendSvcDne := backendService{Name: "dne", Namespace: "test", Port: 80}
 
-	routes := map[types.NamespacedName]*route{
-		types.NamespacedName{Namespace: "test", Name: "hr1"}: {
-			Source: hr1,
-			BackendServices: map[ruleIndex]backendService{
-				ruleIndex(0): backendSvc1,
-				ruleIndex(1): backendSvc2,
-				ruleIndex(2): backendSvc3,
-			},
-		},
-		types.NamespacedName{Namespace: "test", Name: "hr2"}: {
-			Source: hr2,
-			BackendServices: map[ruleIndex]backendService{
-				ruleIndex(0): backendSvc1,
-				ruleIndex(1): backendSvc4,
-			},
-		},
-		types.NamespacedName{Namespace: "test", Name: "hr3"}: {
-			Source: hr3,
-			BackendServices: map[ruleIndex]backendService{
-				ruleIndex(0): backendSvcDne,
-			},
-		},
-	}
-
 	expResolvedBackends := map[backendService]backend{
 		backendSvc1: {Endpoints: []Endpoint{{Address: "10.0.0.0", Port: 80}}},
 		backendSvc2: {Endpoints: []Endpoint{{Address: "11.0.0.0", Port: 80}}},
 		backendSvc3: {Endpoints: []Endpoint{{Address: "12.0.0.0", Port: 80}}},
 	}
 
-	expErrorBackends := map[backendService]backend{
-		backendSvc4:   {ErrorMsg: "failed to resolve endpoints for Service test/svc4"},
-		backendSvcDne: {ErrorMsg: "Service test/dne doesn't exist"},
+	expErrorBackends := map[backendService]string{
+		backendSvc4:   "failed to resolve endpoints for Service test/svc4",
+		backendSvcDne: "Service test/dne doesn't exist",
 	}
 
 	expWarnings := map[client.Object]string{
 		hr2: "cannot resolve backend ref for rule 1",
 		hr3: "cannot resolve backend ref for rule 0",
+		hr4: "invalid backend ref for rule 0",
 	}
 
 	backends, warnings := resolveBackends(routes, serviceStore)
 
 	if len(warnings) != len(expWarnings) {
 		t.Errorf("resolveBackends() mismatch on warnings, expected %d warnings, got %d; warnings: %v", len(expWarnings), len(warnings), warnings)
+	}
+
+	if len(backends) != 5 {
+		t.Errorf("resolveBackends() mismatch on backends, expected %d backends, got %d; backends: %v", 5, len(backends), backends)
 	}
 
 	for obj, warnSubString := range expWarnings {
@@ -1465,10 +1454,10 @@ func TestResolveBackends(t *testing.T) {
 		}
 	}
 
-	for expSvc, expBackend := range expErrorBackends {
+	for expSvc, expErrSubstring := range expErrorBackends {
 		actualBackend := backends[expSvc]
-		if !strings.Contains(actualBackend.ErrorMsg, expBackend.ErrorMsg) {
-			t.Errorf("resolveBackends() mismatch on error message for backend service %v; expected %s to contain %s", expSvc, actualBackend.ErrorMsg, expBackend.ErrorMsg)
+		if !strings.Contains(actualBackend.ErrorMsg, expErrSubstring) {
+			t.Errorf("resolveBackends() mismatch on error message for backend service %v; expected %s to contain %s", expSvc, actualBackend.ErrorMsg, expErrSubstring)
 		}
 	}
 
