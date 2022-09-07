@@ -149,17 +149,15 @@ func generateHTTPUpstreams(upstreams []state.Upstream) httpUpstreams {
 }
 
 func generateUpstream(up state.Upstream) upstream {
-	nginx502Upstream := upstream{
-		Name: up.Name,
-		Servers: []upstreamServer{
-			{
-				Address: nginx502Server,
-			},
-		},
-	}
-
 	if len(up.Endpoints) == 0 {
-		return nginx502Upstream
+		return upstream{
+			Name: up.Name,
+			Servers: []upstreamServer{
+				{
+					Address: nginx502Server,
+				},
+			},
+		}
 	}
 
 	upstreamServers := make([]upstreamServer, len(up.Endpoints))
@@ -168,6 +166,7 @@ func generateUpstream(up state.Upstream) upstream {
 			Address: fmt.Sprintf("%s:%d", ep.Address, ep.Port),
 		}
 	}
+
 	return upstream{
 		Name:    up.Name,
 		Servers: upstreamServers,
