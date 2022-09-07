@@ -37,27 +37,27 @@ func RegisterEndpointSliceController(mgr manager.Manager, impl EndpointSliceImpl
 func (r *endpointSliceReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	log := log.FromContext(ctx).WithValues("endpointslice", req.NamespacedName)
 
-	log.V(3).Info("Reconciling Endpoint Slice")
+	log.V(3).Info("Reconciling EndpointSlice")
 
 	found := true
 	var endpSlice discoveryV1.EndpointSlice
 	err := r.Get(ctx, req.NamespacedName, &endpSlice)
 	if err != nil {
 		if !apierrors.IsNotFound(err) {
-			log.Error(err, "Failed to get Endpoint Slice")
+			log.Error(err, "Failed to get EndpointSlice")
 			return reconcile.Result{}, err
 		}
 		found = false
 	}
 
 	if !found {
-		log.V(3).Info("Removing Endpoint Slice")
+		log.V(3).Info("Removing EndpointSlice")
 
 		r.impl.Remove(req.NamespacedName)
 		return reconcile.Result{}, nil
 	}
 
-	log.V(3).Info("Upserting Endpoint Slice")
+	log.V(3).Info("Upserting EndpointSlice")
 
 	r.impl.Upsert(&endpSlice)
 	return reconcile.Result{}, nil

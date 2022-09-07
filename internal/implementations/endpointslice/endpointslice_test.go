@@ -31,7 +31,7 @@ var _ = Describe("EndpointSliceImplementation", func() {
 	const endpointSliceName = "my-endpoint-slice"
 	const endpointSliceNamespace = "test"
 
-	Describe("Implementation processes Endpoint Slices", func() {
+	Describe("Implementation processes EndpointSlices", func() {
 		It("should process upsert", func() {
 			endpointSlice := &discoveryV1.EndpointSlice{
 				ObjectMeta: metav1.ObjectMeta{

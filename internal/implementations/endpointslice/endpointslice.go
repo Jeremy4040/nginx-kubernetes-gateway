@@ -27,7 +27,7 @@ func (impl *EndpointSliceImplementation) Logger() logr.Logger {
 }
 
 func (impl *EndpointSliceImplementation) Upsert(endpSlice *discoveryV1.EndpointSlice) {
-	impl.Logger().Info("Endpoint Slice was upserted",
+	impl.Logger().Info("EndpointSlice was upserted",
 		"namespace", endpSlice.Namespace, "name", endpSlice.Name,
 	)
 
@@ -37,7 +37,7 @@ func (impl *EndpointSliceImplementation) Upsert(endpSlice *discoveryV1.EndpointS
 }
 
 func (impl *EndpointSliceImplementation) Remove(nsname types.NamespacedName) {
-	impl.Logger().Info("Endpoint Slice resource was removed",
+	impl.Logger().Info("EndpointSlice resource was removed",
 		"namespace", nsname.Namespace, "name", nsname.Name,
 	)
 
