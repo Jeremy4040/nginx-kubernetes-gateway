@@ -1298,7 +1298,7 @@ func TestGetBackendServiceFromRouteRule(t *testing.T) {
 		}
 
 		if diff := helpers.Diff(tc.expSvc, svc); diff != "" {
-			t.Errorf("getBackendServiceFromRouteRule() returned incorrect backend service for test case: %q, diff: %+v", tc.msg, diff)
+			t.Errorf("getBackendServiceFromRouteRule() returned incorrect backend service for test case: %q, diff: %v", tc.msg, diff)
 		}
 	}
 }
