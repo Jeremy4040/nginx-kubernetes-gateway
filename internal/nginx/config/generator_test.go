@@ -37,18 +37,18 @@ func TestGenerate(t *testing.T) {
 		},
 	}
 
-	cfg := generator.Generate(conf)
+	cfg := string(generator.Generate(conf))
 
-	if !strings.Contains(string(cfg), "listen 80") {
-		t.Errorf("Generate() did not generate a config with an HTTP server; config: %s", string(cfg))
+	if !strings.Contains(cfg, "listen 80") {
+		t.Errorf("Generate() did not generate a config with an HTTP server; config: %s", cfg)
 	}
 
-	if !strings.Contains(string(cfg), "listen 443") {
-		t.Errorf("Generate() did not generate a config with an SSL server; config: %s", string(cfg))
+	if !strings.Contains(cfg, "listen 443") {
+		t.Errorf("Generate() did not generate a config with an SSL server; config: %s", cfg)
 	}
 
-	if !strings.Contains(string(cfg), "upstream") {
-		t.Errorf("Generate() did not generate a config with an upstream block; config: %s", string(cfg))
+	if !strings.Contains(cfg, "upstream") {
+		t.Errorf("Generate() did not generate a config with an upstream block; config: %s", cfg)
 	}
 }
 
