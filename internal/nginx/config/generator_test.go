@@ -513,7 +513,7 @@ func TestGenerateUpstream(t *testing.T) {
 	for _, test := range tests {
 		result := generateUpstream(test.stateUpstream)
 		if diff := cmp.Diff(test.expectedUpstream, result); diff != "" {
-			t.Errorf("generateUpstream() mismatch (-want +got):\n%s", diff)
+			t.Errorf("generateUpstream() %q mismatch (-want +got):\n%s", test.msg, diff)
 		}
 	}
 }
