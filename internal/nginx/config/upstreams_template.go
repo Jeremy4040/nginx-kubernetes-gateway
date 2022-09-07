@@ -1,5 +1,6 @@
 package config
 
+// FIXME(kate-osborn): Add upstream zone size for each upstream. This should be dynamically calculated based on the number of upstreams.
 var httpUpstreamsTemplate = `{{ range $u := .Upstreams }}
 upstream {{ $u.Name }} {
 	{{ range $server := $u.Servers }} 
