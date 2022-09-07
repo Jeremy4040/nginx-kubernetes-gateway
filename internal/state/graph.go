@@ -172,6 +172,7 @@ func getBackendServiceFromRouteRule(rule v1beta1.HTTPRouteRule, routeNs string) 
 		return backendService{}, errors.New("no backend refs provided")
 	}
 
+	// FIXME(kate-osborn): Need to handle multiple backend refs per rule once we support the weight field.
 	ref := rule.BackendRefs[0]
 	if ref.Kind != nil && *ref.Kind != "Service" {
 		return backendService{}, fmt.Errorf("backend ref Kind must be \"Service\"; got %s", *ref.Kind)
