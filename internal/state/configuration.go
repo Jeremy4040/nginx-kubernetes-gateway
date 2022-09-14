@@ -5,6 +5,8 @@ import (
 	"sort"
 
 	"sigs.k8s.io/gateway-api/apis/v1beta1"
+
+	"github.com/nginxinc/nginx-kubernetes-gateway/internal/state/resolver"
 )
 
 const wildcardHostname = "~^"
@@ -37,7 +39,7 @@ type Upstream struct {
 	// Name is the name of the Upstream. Will be unique for each service/port combination.
 	Name string
 	// Endpoints are the endpoints of the Upstream.
-	Endpoints []Endpoint
+	Endpoints []resolver.Endpoint
 }
 
 type SSL struct {

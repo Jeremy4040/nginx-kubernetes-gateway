@@ -1,6 +1,8 @@
 package state_test
 
 import (
+	"context"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	apiv1 "k8s.io/api/core/v1"
@@ -15,6 +17,7 @@ import (
 	"github.com/nginxinc/nginx-kubernetes-gateway/internal/helpers"
 	"github.com/nginxinc/nginx-kubernetes-gateway/internal/state"
 	"github.com/nginxinc/nginx-kubernetes-gateway/internal/state/statefakes"
+	"github.com/nginxinc/nginx-kubernetes-gateway/pkg/sdk"
 )
 
 const (
@@ -196,7 +199,7 @@ var _ = Describe("ChangeProcessor", func() {
 			})
 			When("no upsert has occurred", func() {
 				It("should return empty configuration and statuses", func() {
-					changed, conf, statuses := processor.Process()
+					changed, conf, statuses := processor.Process(context.TODO())
 					Expect(changed).To(BeFalse())
 					Expect(conf).To(BeZero())
 					Expect(statuses).To(BeZero())
@@ -213,7 +216,7 @@ var _ = Describe("ChangeProcessor", func() {
 							HTTPRouteStatuses:      map[types.NamespacedName]state.HTTPRouteStatus{},
 						}
 
-						changed, conf, statuses := processor.Process()
+						changed, conf, statuses := processor.Process(context.TODO())
 						Expect(changed).To(BeTrue())
 						Expect(helpers.Diff(expectedConf, conf)).To(BeEmpty())
 						Expect(helpers.Diff(expectedStatuses, statuses)).To(BeEmpty())
@@ -249,7 +252,7 @@ var _ = Describe("ChangeProcessor", func() {
 						},
 					}
 
-					changed, conf, statuses := processor.Process()
+					changed, conf, statuses := processor.Process(context.TODO())
 					Expect(changed).To(BeTrue())
 					Expect(helpers.Diff(expectedConf, conf)).To(BeEmpty())
 					Expect(helpers.Diff(expectedStatuses, statuses)).To(BeEmpty())
@@ -333,7 +336,7 @@ var _ = Describe("ChangeProcessor", func() {
 					},
 				}
 
-				changed, conf, statuses := processor.Process()
+				changed, conf, statuses := processor.Process(context.TODO())
 				Expect(changed).To(BeTrue())
 				Expect(helpers.Diff(expectedConf, conf)).To(BeEmpty())
 				Expect(helpers.Diff(expectedStatuses, statuses)).To(BeEmpty())
@@ -344,7 +347,7 @@ var _ = Describe("ChangeProcessor", func() {
 				// hr1UpdatedSameGen.Generation has not been changed
 				processor.CaptureUpsertChange(hr1UpdatedSameGen)
 
-				changed, conf, statuses := processor.Process()
+				changed, conf, statuses := processor.Process(context.TODO())
 				Expect(changed).To(BeFalse())
 				Expect(conf).To(BeZero())
 				Expect(statuses).To(BeZero())
@@ -426,7 +429,7 @@ var _ = Describe("ChangeProcessor", func() {
 					},
 				}
 
-				changed, conf, statuses := processor.Process()
+				changed, conf, statuses := processor.Process(context.TODO())
 				Expect(changed).To(BeTrue())
 				Expect(helpers.Diff(expectedConf, conf)).To(BeEmpty())
 				Expect(helpers.Diff(expectedStatuses, statuses)).To(BeEmpty())
@@ -437,7 +440,7 @@ var _ = Describe("ChangeProcessor", func() {
 				// gwUpdatedSameGen.Generation has not been changed
 				processor.CaptureUpsertChange(gwUpdatedSameGen)
 
-				changed, conf, statuses := processor.Process()
+				changed, conf, statuses := processor.Process(context.TODO())
 				Expect(changed).To(BeFalse())
 				Expect(conf).To(BeZero())
 				Expect(statuses).To(BeZero())
@@ -519,7 +522,7 @@ var _ = Describe("ChangeProcessor", func() {
 					},
 				}
 
-				changed, conf, statuses := processor.Process()
+				changed, conf, statuses := processor.Process(context.TODO())
 				Expect(changed).To(BeTrue())
 				Expect(helpers.Diff(expectedConf, conf)).To(BeEmpty())
 				Expect(helpers.Diff(expectedStatuses, statuses)).To(BeEmpty())
@@ -530,7 +533,7 @@ var _ = Describe("ChangeProcessor", func() {
 				// gcUpdatedSameGen.Generation has not been changed
 				processor.CaptureUpsertChange(gcUpdatedSameGen)
 
-				changed, conf, statuses := processor.Process()
+				changed, conf, statuses := processor.Process(context.TODO())
 				Expect(changed).To(BeFalse())
 				Expect(conf).To(BeZero())
 				Expect(statuses).To(BeZero())
@@ -612,14 +615,14 @@ var _ = Describe("ChangeProcessor", func() {
 					},
 				}
 
-				changed, conf, statuses := processor.Process()
+				changed, conf, statuses := processor.Process(context.TODO())
 				Expect(changed).To(BeTrue())
 				Expect(helpers.Diff(expectedConf, conf)).To(BeEmpty())
 				Expect(helpers.Diff(expectedStatuses, statuses)).To(BeEmpty())
 			})
 
 			It("should return empty configuration and statuses after processing without capturing any changes", func() {
-				changed, conf, statuses := processor.Process()
+				changed, conf, statuses := processor.Process(context.TODO())
 
 				Expect(changed).To(BeFalse())
 				Expect(conf).To(BeZero())
@@ -708,7 +711,7 @@ var _ = Describe("ChangeProcessor", func() {
 					},
 				}
 
-				changed, conf, statuses := processor.Process()
+				changed, conf, statuses := processor.Process(context.TODO())
 				Expect(changed).To(BeTrue())
 				Expect(helpers.Diff(expectedConf, conf)).To(BeEmpty())
 				Expect(helpers.Diff(expectedStatuses, statuses)).To(BeEmpty())
@@ -800,7 +803,7 @@ var _ = Describe("ChangeProcessor", func() {
 					},
 				}
 
-				changed, conf, statuses := processor.Process()
+				changed, conf, statuses := processor.Process(context.TODO())
 				Expect(changed).To(BeTrue())
 				Expect(helpers.Diff(expectedConf, conf)).To(BeEmpty())
 				Expect(helpers.Diff(expectedStatuses, statuses)).To(BeEmpty())
@@ -882,7 +885,7 @@ var _ = Describe("ChangeProcessor", func() {
 					},
 				}
 
-				changed, conf, statuses := processor.Process()
+				changed, conf, statuses := processor.Process(context.TODO())
 				Expect(changed).To(BeTrue())
 				Expect(helpers.Diff(expectedConf, conf)).To(BeEmpty())
 				Expect(helpers.Diff(expectedStatuses, statuses)).To(BeEmpty())
@@ -923,7 +926,7 @@ var _ = Describe("ChangeProcessor", func() {
 					HTTPRouteStatuses:      map[types.NamespacedName]state.HTTPRouteStatus{},
 				}
 
-				changed, conf, statuses := processor.Process()
+				changed, conf, statuses := processor.Process(context.TODO())
 				Expect(changed).To(BeTrue())
 				Expect(helpers.Diff(expectedConf, conf)).To(BeEmpty())
 				Expect(helpers.Diff(expectedStatuses, statuses)).To(BeEmpty())
@@ -951,7 +954,7 @@ var _ = Describe("ChangeProcessor", func() {
 					HTTPRouteStatuses:      map[types.NamespacedName]state.HTTPRouteStatus{},
 				}
 
-				changed, conf, statuses := processor.Process()
+				changed, conf, statuses := processor.Process(context.TODO())
 				Expect(changed).To(BeTrue())
 				Expect(helpers.Diff(expectedConf, conf)).To(BeEmpty())
 				Expect(helpers.Diff(expectedStatuses, statuses)).To(BeEmpty())
@@ -966,7 +969,7 @@ var _ = Describe("ChangeProcessor", func() {
 					HTTPRouteStatuses:      map[types.NamespacedName]state.HTTPRouteStatus{},
 				}
 
-				changed, conf, statuses := processor.Process()
+				changed, conf, statuses := processor.Process(context.TODO())
 				Expect(changed).To(BeTrue())
 				Expect(helpers.Diff(expectedConf, conf)).To(BeEmpty())
 				Expect(helpers.Diff(expectedStatuses, statuses)).To(BeEmpty())
@@ -981,7 +984,7 @@ var _ = Describe("ChangeProcessor", func() {
 					HTTPRouteStatuses:      map[types.NamespacedName]state.HTTPRouteStatus{},
 				}
 
-				changed, conf, statuses := processor.Process()
+				changed, conf, statuses := processor.Process(context.TODO())
 				Expect(changed).To(BeTrue())
 				Expect(helpers.Diff(expectedConf, conf)).To(BeEmpty())
 				Expect(helpers.Diff(expectedStatuses, statuses)).To(BeEmpty())
@@ -989,35 +992,27 @@ var _ = Describe("ChangeProcessor", func() {
 		})
 		Describe("Process services and endpoints", Ordered, func() {
 			var (
-				hr1, hr2, hr3, hrInvalidBackendRef, hrMultipleRules                                       *v1beta1.HTTPRoute
-				hr1svc, sharedSvc, bazSvc1, bazSvc2, bazSvc3, invalidSvc, notRefSvc                       *apiv1.Service
-				hr1SvcEndpointSlice1, hr1SvcEndpointSlice2, notRefEndpointSlice, invalidKindEndpointSlice *discoveryV1.EndpointSlice
+				hr1, hr2, hr3, hrInvalidBackendRef, hrMultipleRules                 *v1beta1.HTTPRoute
+				hr1svc, sharedSvc, bazSvc1, bazSvc2, bazSvc3, invalidSvc, notRefSvc *apiv1.Service
+				hr1slice1, hr1slice2, noRefSlice, missingSvcNameSlice               *discoveryV1.EndpointSlice
 			)
 
 			createSvc := func(name string) *apiv1.Service {
 				return &apiv1.Service{
 					ObjectMeta: metav1.ObjectMeta{
-						Namespace:  "test",
-						Name:       name,
-						Generation: 1,
+						Namespace: "test",
+						Name:      name,
 					},
 				}
 			}
 
-			createEndpointSlice := func(name string, owners ...metav1.OwnerReference) *discoveryV1.EndpointSlice {
+			createEndpointSlice := func(name string, svcName string) *discoveryV1.EndpointSlice {
 				return &discoveryV1.EndpointSlice{
 					ObjectMeta: metav1.ObjectMeta{
-						Namespace:       "test",
-						Name:            name,
-						OwnerReferences: owners,
+						Namespace: "test",
+						Name:      name,
+						Labels:    map[string]string{sdk.KubernetesServiceNameLabel: svcName},
 					},
-				}
-			}
-
-			svcToOwnerRef := func(svc *apiv1.Service) metav1.OwnerReference {
-				return metav1.OwnerReference{
-					Kind: "Service",
-					Name: svc.Name,
 				}
 			}
 
@@ -1025,6 +1020,7 @@ var _ = Describe("ChangeProcessor", func() {
 				testNamespace := v1beta1.Namespace("test")
 				kindService := v1beta1.Kind("Service")
 				kindInvalid := v1beta1.Kind("Invalid")
+
 				// backend Refs
 				fooRef := createBackendRef(&kindService, "foo-svc", &testNamespace)
 				barRef := createBackendRef(&kindService, "bar-svc", nil) // nil namespace should inherit namespace from route
@@ -1059,18 +1055,14 @@ var _ = Describe("ChangeProcessor", func() {
 				bazSvc3 = createSvc("baz-svc-v3")
 
 				// endpoint slices
-				hr1SvcEndpointSlice1 = createEndpointSlice("hr1-1", metav1.OwnerReference{Kind: "Service", Name: "not-ref"}, svcToOwnerRef(hr1svc))
-				hr1SvcEndpointSlice2 = createEndpointSlice("hr1-2", svcToOwnerRef(hr1svc))
-				invalidKindEndpointSlice = createEndpointSlice("invalid-kind", metav1.OwnerReference{Kind: "Invalid", Name: "foo-svc"}) // same name as hr1svc but invalid Kind.
-				notRefEndpointSlice = createEndpointSlice(
-					"not-ref",
-					metav1.OwnerReference{Kind: "Service", Name: "not-ref"},
-					metav1.OwnerReference{Kind: "Service", Name: "another-not-ref"},
-				)
+				hr1slice1 = createEndpointSlice("hr1-1", "foo-svc")
+				hr1slice2 = createEndpointSlice("hr1-2", "foo-svc")
+				noRefSlice = createEndpointSlice("no-ref", "no-ref")
+				missingSvcNameSlice = createEndpointSlice("missing-svc-name", "")
 			})
 
 			testProcessChangedVal := func(expChanged bool) {
-				changed, _, _ := processor.Process()
+				changed, _, _ := processor.Process(context.TODO())
 				Expect(changed).To(Equal(expChanged))
 			}
 
@@ -1091,25 +1083,25 @@ var _ = Describe("ChangeProcessor", func() {
 				testUpsertTriggersChange(hr1svc, true)
 			})
 			It("add endpoint slice for hr1", func() {
-				testUpsertTriggersChange(hr1SvcEndpointSlice1, true)
+				testUpsertTriggersChange(hr1slice1, true)
 			})
 			It("update for service for hr1", func() {
 				testUpsertTriggersChange(hr1svc, true)
 			})
 			It("add second endpoint slice for hr1", func() {
-				testUpsertTriggersChange(hr1SvcEndpointSlice2, true)
+				testUpsertTriggersChange(hr1slice2, true)
 			})
-			It("add endpoint slice with invalid kind", func() {
-				testUpsertTriggersChange(invalidKindEndpointSlice, false)
+			It("add endpoint slice with missing svc name label", func() {
+				testUpsertTriggersChange(missingSvcNameSlice, false)
 			})
 			It("delete one endpoint slice for hr1", func() {
-				testDeleteTriggersChange(hr1SvcEndpointSlice1, types.NamespacedName{Namespace: hr1SvcEndpointSlice1.Namespace, Name: hr1SvcEndpointSlice1.Name}, true)
+				testDeleteTriggersChange(hr1slice1, types.NamespacedName{Namespace: hr1slice1.Namespace, Name: hr1slice1.Name}, true)
 			})
 			It("delete second endpoint slice for hr1", func() {
-				testDeleteTriggersChange(hr1SvcEndpointSlice2, types.NamespacedName{Namespace: hr1SvcEndpointSlice2.Namespace, Name: hr1SvcEndpointSlice2.Name}, true)
+				testDeleteTriggersChange(hr1slice2, types.NamespacedName{Namespace: hr1slice2.Namespace, Name: hr1slice2.Name}, true)
 			})
 			It("recreate second endpoint slice for hr1", func() {
-				testUpsertTriggersChange(hr1SvcEndpointSlice2, true)
+				testUpsertTriggersChange(hr1slice2, true)
 			})
 			It("delete hr1", func() {
 				testDeleteTriggersChange(hr1, types.NamespacedName{Namespace: hr1.Namespace, Name: hr1.Name}, true)
@@ -1118,7 +1110,7 @@ var _ = Describe("ChangeProcessor", func() {
 				testDeleteTriggersChange(hr1svc, types.NamespacedName{Namespace: hr1svc.Namespace, Name: hr1svc.Name}, false)
 			})
 			It("delete second endpoint slice for hr1", func() {
-				testDeleteTriggersChange(hr1SvcEndpointSlice2, types.NamespacedName{Namespace: hr1SvcEndpointSlice2.Namespace, Name: hr1SvcEndpointSlice2.Name}, false)
+				testDeleteTriggersChange(hr1slice2, types.NamespacedName{Namespace: hr1slice2.Namespace, Name: hr1slice2.Name}, false)
 			})
 			It("add hr2", func() {
 				testUpsertTriggersChange(hr2, true)
@@ -1154,10 +1146,10 @@ var _ = Describe("ChangeProcessor", func() {
 				testUpsertTriggersChange(invalidSvc, false)
 			})
 			It("add endpoint slice that is not owned by a referenced service", func() {
-				testUpsertTriggersChange(notRefEndpointSlice, false)
+				testUpsertTriggersChange(noRefSlice, false)
 			})
 			It("delete endpoint slice that is not owned by a referenced service", func() {
-				testDeleteTriggersChange(notRefEndpointSlice, types.NamespacedName{Namespace: notRefEndpointSlice.Namespace, Name: notRefEndpointSlice.Name}, false)
+				testDeleteTriggersChange(noRefSlice, types.NamespacedName{Namespace: noRefSlice.Namespace, Name: noRefSlice.Name}, false)
 			})
 			When("processing a route with multiple rules and three unique backend services", func() {
 				It("adds route", func() {
@@ -1271,7 +1263,7 @@ var _ = Describe("ChangeProcessor", func() {
 				processor.CaptureUpsertChange(gw1)
 				processor.CaptureUpsertChange(hr1)
 
-				changed, _, _ := processor.Process()
+				changed, _, _ := processor.Process(context.TODO())
 				Expect(changed).To(BeTrue())
 			})
 
@@ -1280,7 +1272,7 @@ var _ = Describe("ChangeProcessor", func() {
 				processor.CaptureUpsertChange(gw1)
 				processor.CaptureUpsertChange(hr1)
 
-				changed, _, _ := processor.Process()
+				changed, _, _ := processor.Process(context.TODO())
 				Expect(changed).To(BeFalse())
 			})
 
@@ -1295,7 +1287,7 @@ var _ = Describe("ChangeProcessor", func() {
 				processor.CaptureUpsertChange(gw1Updated)
 				processor.CaptureUpsertChange(hr1Updated)
 
-				changed, _, _ := processor.Process()
+				changed, _, _ := processor.Process(context.TODO())
 				Expect(changed).To(BeTrue())
 			})
 
@@ -1304,7 +1296,7 @@ var _ = Describe("ChangeProcessor", func() {
 				processor.CaptureUpsertChange(gw2)
 				processor.CaptureUpsertChange(hr2)
 
-				changed, _, _ := processor.Process()
+				changed, _, _ := processor.Process(context.TODO())
 				Expect(changed).To(BeTrue())
 			})
 
@@ -1318,7 +1310,7 @@ var _ = Describe("ChangeProcessor", func() {
 				processor.CaptureUpsertChange(gw2)
 				processor.CaptureUpsertChange(hr2)
 
-				changed, _, _ := processor.Process()
+				changed, _, _ := processor.Process(context.TODO())
 				Expect(changed).To(BeTrue())
 			})
 		})

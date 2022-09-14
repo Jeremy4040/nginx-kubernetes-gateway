@@ -11,6 +11,7 @@ import (
 
 	"github.com/nginxinc/nginx-kubernetes-gateway/internal/helpers"
 	"github.com/nginxinc/nginx-kubernetes-gateway/internal/state"
+	"github.com/nginxinc/nginx-kubernetes-gateway/internal/state/resolver"
 )
 
 func TestGenerate(t *testing.T) {
@@ -386,7 +387,7 @@ func TestGenerateHTTPUpstreams(t *testing.T) {
 	stateUpstreams := []state.Upstream{
 		{
 			Name: "up1",
-			Endpoints: []state.Endpoint{
+			Endpoints: []resolver.Endpoint{
 				{
 					Address: "10.0.0.0",
 					Port:    80,
@@ -403,7 +404,7 @@ func TestGenerateHTTPUpstreams(t *testing.T) {
 		},
 		{
 			Name: "up2",
-			Endpoints: []state.Endpoint{
+			Endpoints: []resolver.Endpoint{
 				{
 					Address: "11.0.0.0",
 					Port:    80,
@@ -412,7 +413,7 @@ func TestGenerateHTTPUpstreams(t *testing.T) {
 		},
 		{
 			Name:      "up3",
-			Endpoints: []state.Endpoint{},
+			Endpoints: []resolver.Endpoint{},
 		},
 	}
 
@@ -482,7 +483,7 @@ func TestGenerateUpstream(t *testing.T) {
 		{
 			stateUpstream: state.Upstream{
 				Name:      "no-endpoints",
-				Endpoints: []state.Endpoint{},
+				Endpoints: []resolver.Endpoint{},
 			},
 			expectedUpstream: upstream{Name: "no-endpoints", Servers: []upstreamServer{{Address: nginx502Server}}},
 			msg:              "no endpoints",
@@ -490,7 +491,7 @@ func TestGenerateUpstream(t *testing.T) {
 		{
 			stateUpstream: state.Upstream{
 				Name: "multiple-endpoints",
-				Endpoints: []state.Endpoint{
+				Endpoints: []resolver.Endpoint{
 					{
 						Address: "10.0.0.1",
 						Port:    80,

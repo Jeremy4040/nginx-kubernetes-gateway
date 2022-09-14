@@ -25,6 +25,7 @@ import (
 	"github.com/nginxinc/nginx-kubernetes-gateway/internal/nginx/file"
 	ngxruntime "github.com/nginxinc/nginx-kubernetes-gateway/internal/nginx/runtime"
 	"github.com/nginxinc/nginx-kubernetes-gateway/internal/state"
+	"github.com/nginxinc/nginx-kubernetes-gateway/internal/state/resolver"
 	"github.com/nginxinc/nginx-kubernetes-gateway/internal/status"
 	"github.com/nginxinc/nginx-kubernetes-gateway/pkg/sdk"
 )
@@ -91,12 +92,11 @@ func Start(cfg config.Config) error {
 	secretStore := state.NewSecretStore()
 	secretMemoryMgr := state.NewSecretDiskMemoryManager(secretsFolder, secretStore)
 
-	serviceStore := state.NewServiceStore(mgr.GetClient())
 	processor := state.NewChangeProcessorImpl(state.ChangeProcessorConfig{
 		GatewayCtlrName:     cfg.GatewayCtlrName,
 		GatewayClassName:    cfg.GatewayClassName,
 		SecretMemoryManager: secretMemoryMgr,
-		ServiceStore:        serviceStore,
+		ServiceResolver:     resolver.NewServiceResolverImpl(mgr.GetClient()),
 		Logger:              cfg.Logger.WithName("changeProcessor"),
 	})
 
@@ -116,7 +116,6 @@ func Start(cfg config.Config) error {
 
 	eventHandler := events.NewEventHandlerImpl(events.EventHandlerConfig{
 		Processor:           processor,
-		ServiceStore:        serviceStore,
 		SecretStore:         secretStore,
 		SecretMemoryManager: secretMemoryMgr,
 		Generator:           configGenerator,

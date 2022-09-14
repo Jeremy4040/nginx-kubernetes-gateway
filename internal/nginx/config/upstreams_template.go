@@ -4,8 +4,8 @@ package config
 var httpUpstreamsTemplate = `{{ range $u := .Upstreams }}
 upstream {{ $u.Name }} {
     random two least_conn;
-	{{ range $server := $u.Servers }} 
-	server {{ $server.Address }};
-	{{ end }}
+    {{ range $server := $u.Servers }} 
+    server {{ $server.Address }};
+    {{ end }}
 }
 {{ end }}`

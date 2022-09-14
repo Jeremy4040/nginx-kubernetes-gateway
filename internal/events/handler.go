@@ -29,8 +29,6 @@ type EventHandler interface {
 type EventHandlerConfig struct {
 	// Processor is the state ChangeProcessor.
 	Processor state.ChangeProcessor
-	// ServiceStore is the state ServiceStore.
-	ServiceStore state.ServiceStore
 	// SecretStore is the state SecretStore.
 	SecretStore state.SecretStore
 	// SecretMemoryManager is the state SecretMemoryManager.
@@ -74,7 +72,7 @@ func (h *EventHandlerImpl) HandleEventBatch(ctx context.Context, batch EventBatc
 		}
 	}
 
-	changed, conf, statuses := h.cfg.Processor.Process()
+	changed, conf, statuses := h.cfg.Processor.Process(ctx)
 	if !changed {
 		h.cfg.Logger.Info("Handling events didn't result into NGINX configuration changes")
 		return
@@ -121,7 +119,6 @@ func (h *EventHandlerImpl) propagateUpsert(e *UpsertEvent) {
 	case *v1beta1.HTTPRoute:
 		h.cfg.Processor.CaptureUpsertChange(r)
 	case *apiv1.Service:
-		h.cfg.ServiceStore.Upsert(r)
 		h.cfg.Processor.CaptureUpsertChange(r)
 	case *apiv1.Secret:
 		// FIXME(kate-osborn): need to handle certificate rotation
@@ -142,7 +139,6 @@ func (h *EventHandlerImpl) propagateDelete(e *DeleteEvent) {
 	case *v1beta1.HTTPRoute:
 		h.cfg.Processor.CaptureDeleteChange(e.Type, e.NamespacedName)
 	case *apiv1.Service:
-		h.cfg.ServiceStore.Delete(e.NamespacedName)
 		h.cfg.Processor.CaptureDeleteChange(e.Type, e.NamespacedName)
 	case *apiv1.Secret:
 		// FIXME(kate-osborn): make sure that affected servers are updated

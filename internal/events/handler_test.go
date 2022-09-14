@@ -40,7 +40,6 @@ var _ = Describe("EventHandler", func() {
 	var (
 		handler                 *events.EventHandlerImpl
 		fakeProcessor           *statefakes.FakeChangeProcessor
-		fakeServiceStore        *statefakes.FakeServiceStore
 		fakeSecretStore         *statefakes.FakeSecretStore
 		fakeSecretMemoryManager *statefakes.FakeSecretDiskMemoryManager
 		fakeGenerator           *configfakes.FakeGenerator
@@ -69,7 +68,6 @@ var _ = Describe("EventHandler", func() {
 
 	BeforeEach(func() {
 		fakeProcessor = &statefakes.FakeChangeProcessor{}
-		fakeServiceStore = &statefakes.FakeServiceStore{}
 		fakeSecretMemoryManager = &statefakes.FakeSecretDiskMemoryManager{}
 		fakeSecretStore = &statefakes.FakeSecretStore{}
 		fakeGenerator = &configfakes.FakeGenerator{}
@@ -79,7 +77,6 @@ var _ = Describe("EventHandler", func() {
 
 		handler = events.NewEventHandlerImpl(events.EventHandlerConfig{
 			Processor:           fakeProcessor,
-			ServiceStore:        fakeServiceStore,
 			SecretStore:         fakeSecretStore,
 			SecretMemoryManager: fakeSecretMemoryManager,
 			Generator:           fakeGenerator,
@@ -233,13 +230,6 @@ var _ = Describe("EventHandler", func() {
 			Expect(passedObj).Should(Equal(d.Type))
 			Expect(passedNsName).Should(Equal(d.NamespacedName))
 		}
-
-		// Check Service-related expectations
-		Expect(fakeServiceStore.UpsertCallCount()).Should(Equal(1))
-		Expect(fakeServiceStore.UpsertArgsForCall(0)).Should(Equal(svc))
-
-		Expect(fakeServiceStore.DeleteCallCount()).Should(Equal(1))
-		Expect(fakeServiceStore.DeleteArgsForCall(0)).Should(Equal(svcNsName))
 
 		// Check Secret-related expectations
 		Expect(fakeSecretStore.UpsertCallCount()).Should(Equal(1))

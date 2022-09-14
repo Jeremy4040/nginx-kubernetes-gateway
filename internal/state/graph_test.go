@@ -2,21 +2,20 @@
 package state
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	v1 "k8s.io/api/core/v1"
-	discoveryV1 "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/intstr"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/gateway-api/apis/v1beta1"
 
 	"github.com/nginxinc/nginx-kubernetes-gateway/internal/helpers"
+	"github.com/nginxinc/nginx-kubernetes-gateway/internal/state/resolver"
+	"github.com/nginxinc/nginx-kubernetes-gateway/internal/state/resolver/resolverfakes"
 )
 
 var testSecret = &v1.Secret{
@@ -80,21 +79,6 @@ var (
 	secretPath       = "/etc/nginx/secrets/test_secret"
 	secretsDirectory = "/etc/nginx/secrets"
 )
-
-func createFakeK8sClient(initialResources ...runtime.Object) (client.Client, error) {
-	scheme := runtime.NewScheme()
-	err := discoveryV1.AddToScheme(scheme)
-	if err != nil {
-		return nil, err
-	}
-
-	fakeK8sClient := fake.NewClientBuilder().
-		WithScheme(scheme).
-		WithRuntimeObjects(initialResources...).
-		Build()
-
-	return fakeK8sClient, nil
-}
 
 func TestBuildGraph(t *testing.T) {
 	const (
@@ -192,6 +176,8 @@ func TestBuildGraph(t *testing.T) {
 	gw1 := createGateway("gateway-1")
 	gw2 := createGateway("gateway-2")
 
+	svc := &v1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: "test", Name: "foo"}}
+
 	store := &store{
 		gc: &v1beta1.GatewayClass{
 			Spec: v1beta1.GatewayClassSpec{
@@ -206,6 +192,9 @@ func TestBuildGraph(t *testing.T) {
 			{Namespace: "test", Name: "hr-1"}: hr1,
 			{Namespace: "test", Name: "hr-2"}: hr2,
 			{Namespace: "test", Name: "hr-3"}: hr3,
+		},
+		services: map[types.NamespacedName]*v1.Service{
+			{Namespace: "test", Name: "foo"}: svc,
 		},
 	}
 
@@ -244,12 +233,15 @@ func TestBuildGraph(t *testing.T) {
 	secretStore.Upsert(testSecret)
 	secretMemoryMgr := NewSecretDiskMemoryManager(secretsDirectory, secretStore)
 
-	// create service store with fake k8s client
-	fakeK8sClient, err := createFakeK8sClient()
-	if err != nil {
-		t.Fatalf("failed to create fake k8s client: %v", err)
+	expFooEndpoints := []resolver.Endpoint{
+		{
+			Address: "10.0.0.0",
+			Port:    8080,
+		},
 	}
-	serviceStore := NewServiceStore(fakeK8sClient)
+
+	fakeServiceResolver := &resolverfakes.FakeServiceResolver{}
+	fakeServiceResolver.ResolveReturns(expFooEndpoints, nil)
 
 	expected := &graph{
 		GatewayClass: &gatewayClass{
@@ -295,18 +287,14 @@ func TestBuildGraph(t *testing.T) {
 				Namespace: "test",
 				Port:      80,
 			}: {
-				Endpoints: nil,
-				ErrorMsg:  "Service test/foo doesn't exist",
+				Endpoints: expFooEndpoints,
 			},
 		},
 	}
 
-	expWarnings := Warnings{
-		hr1: []string{"cannot resolve backend ref for rule 0: Service test/foo doesn't exist"},
-		hr3: []string{"cannot resolve backend ref for rule 0: Service test/foo doesn't exist"},
-	}
+	expWarnings := Warnings{}
 
-	result, warnings := buildGraph(store, controllerName, gcName, secretMemoryMgr, serviceStore)
+	result, warnings := buildGraph(context.TODO(), store, controllerName, gcName, secretMemoryMgr, fakeServiceResolver)
 	if diff := cmp.Diff(expected, result); diff != "" {
 		t.Errorf("buildGraph() mismatch (-want +got):\n%s", diff)
 	}
@@ -1304,73 +1292,21 @@ func TestGetBackendServiceFromRouteRule(t *testing.T) {
 }
 
 func TestResolveBackends(t *testing.T) {
-	createEndpointSlice := func(name, serviceName string, address string) *discoveryV1.EndpointSlice {
-		return &discoveryV1.EndpointSlice{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      name,
-				Namespace: "test",
-				Labels: map[string]string{
-					"kubernetes.io/service-name": serviceName,
-				},
-			},
-			AddressType: discoveryV1.AddressTypeIPv4,
-			Endpoints: []discoveryV1.Endpoint{
-				{
-					Addresses: []string{address},
-					Conditions: discoveryV1.EndpointConditions{
-						Ready: helpers.GetBoolPointer(true),
-					},
-				},
-			},
-			Ports: []discoveryV1.EndpointPort{
-				{
-					Port: helpers.GetInt32Pointer(80),
-				},
-			},
+	fakeK8sResolver := &resolverfakes.FakeServiceResolver{}
+
+	fakeK8sResolver.ResolveCalls(func(ctx context.Context, svc *v1.Service, port int32) ([]resolver.Endpoint, error) {
+		if strings.Contains(svc.Name, "error") {
+			return nil, errors.New("resolve error")
 		}
-	}
 
-	svc1EndpointSlice := createEndpointSlice("svc1-es", "svc1", "10.0.0.0")
-	svc2EndpointSlice := createEndpointSlice("svc2-es", "svc2", "11.0.0.0")
-	svc3EndpointSlice := createEndpointSlice("svc3-es", "svc3", "12.0.0.0")
-
-	fakeK8sClient, err := createFakeK8sClient(svc1EndpointSlice, svc2EndpointSlice, svc3EndpointSlice)
-	if err != nil {
-		t.Fatalf("failed to create fake k8s client: %v", err)
-	}
-
-	createService := func(name string) *v1.Service {
-		return &v1.Service{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: "test",
-				Name:      name,
-			},
-			Spec: v1.ServiceSpec{
-				Ports: []v1.ServicePort{
-					{
-						Port: 80,
-						TargetPort: intstr.IntOrString{
-							Type:   intstr.Int,
-							IntVal: 80,
-						},
-					},
-				},
-			},
-		}
-	}
-
-	serviceStore := NewServiceStore(fakeK8sClient)
-
-	serviceStore.Upsert(createService("svc1"))
-	serviceStore.Upsert(createService("svc2"))
-	serviceStore.Upsert(createService("svc3"))
-	serviceStore.Upsert(createService("svc4"))
+		return []resolver.Endpoint{{Address: "10.0.0.0", Port: 80}}, nil
+	})
 
 	createRoute := func(name string, kind string, serviceNames ...string) *v1beta1.HTTPRoute {
 		hr := &v1beta1.HTTPRoute{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: "test",
-				Name:      "hr",
+				Name:      name,
 			},
 		}
 
@@ -1396,55 +1332,63 @@ func TestResolveBackends(t *testing.T) {
 	}
 
 	hr1 := createRoute("hr1", "Service", "svc1", "svc2", "svc3")
-	hr2 := createRoute("hr2", "Service", "svc1", "svc4")
+	hr2 := createRoute("hr2", "Service", "svc1", "error-svc4")
 	hr3 := createRoute("hr3", "Service", "dne")
 	hr4 := createRoute("hr4", "NotService", "not-svc")
+	hr5 := createRoute("hr5", "Service", "error-svc4")
 
 	routes := map[types.NamespacedName]*route{
-		types.NamespacedName{Namespace: "test", Name: "hr1"}: {Source: hr1},
-		types.NamespacedName{Namespace: "test", Name: "hr2"}: {Source: hr2},
-		types.NamespacedName{Namespace: "test", Name: "hr3"}: {Source: hr3},
-		types.NamespacedName{Namespace: "test", Name: "hr4"}: {Source: hr4},
+		{Namespace: "test", Name: "hr1"}: {Source: hr1},
+		{Namespace: "test", Name: "hr2"}: {Source: hr2},
+		{Namespace: "test", Name: "hr3"}: {Source: hr3},
+		{Namespace: "test", Name: "hr4"}: {Source: hr4},
+		{Namespace: "test", Name: "hr5"}: {Source: hr5},
+	}
+
+	svc1 := &v1.Service{ObjectMeta: metav1.ObjectMeta{Name: "svc1"}}
+	svc2 := &v1.Service{ObjectMeta: metav1.ObjectMeta{Name: "svc2"}}
+	svc3 := &v1.Service{ObjectMeta: metav1.ObjectMeta{Name: "svc3"}}
+	svc4 := &v1.Service{ObjectMeta: metav1.ObjectMeta{Name: "error-svc4"}}
+
+	services := map[types.NamespacedName]*v1.Service{
+		{Namespace: "test", Name: "svc1"}:       svc1,
+		{Namespace: "test", Name: "svc2"}:       svc2,
+		{Namespace: "test", Name: "svc3"}:       svc3,
+		{Namespace: "test", Name: "error-svc4"}: svc4,
 	}
 
 	backendSvc1 := backendService{Name: "svc1", Namespace: "test", Port: 80}
 	backendSvc2 := backendService{Name: "svc2", Namespace: "test", Port: 80}
 	backendSvc3 := backendService{Name: "svc3", Namespace: "test", Port: 80}
-	backendSvc4 := backendService{Name: "svc4", Namespace: "test", Port: 80}
+	backendSvc4 := backendService{Name: "error-svc4", Namespace: "test", Port: 80}
 	backendSvcDne := backendService{Name: "dne", Namespace: "test", Port: 80}
 
 	expResolvedBackends := map[backendService]backend{
-		backendSvc1: {Endpoints: []Endpoint{{Address: "10.0.0.0", Port: 80}}},
-		backendSvc2: {Endpoints: []Endpoint{{Address: "11.0.0.0", Port: 80}}},
-		backendSvc3: {Endpoints: []Endpoint{{Address: "12.0.0.0", Port: 80}}},
+		backendSvc1: {Endpoints: []resolver.Endpoint{{Address: "10.0.0.0", Port: 80}}},
+		backendSvc2: {Endpoints: []resolver.Endpoint{{Address: "10.0.0.0", Port: 80}}},
+		backendSvc3: {Endpoints: []resolver.Endpoint{{Address: "10.0.0.0", Port: 80}}},
 	}
 
 	expErrorBackends := map[backendService]string{
-		backendSvc4:   "failed to resolve endpoints for Service test/svc4",
-		backendSvcDne: "Service test/dne doesn't exist",
+		backendSvc4:   "resolve error",
+		backendSvcDne: "Service test/dne does not exist",
 	}
 
-	expWarnings := map[client.Object]string{
-		hr2: "cannot resolve backend ref for rule 1",
-		hr3: "cannot resolve backend ref for rule 0",
-		hr4: "invalid backend ref for rule 0",
+	expWarnings := Warnings{
+		hr2: []string{"cannot resolve backend ref for rule 1: resolve error"},
+		hr3: []string{"cannot resolve backend ref for rule 0: Service test/dne does not exist"},
+		hr4: []string{"invalid backend ref for rule 0: backend ref Kind must be Service; got NotService"},
+		hr5: []string{"cannot resolve backend ref for rule 0: resolve error"},
 	}
 
-	backends, warnings := resolveBackends(routes, serviceStore)
+	backends, warnings := resolveBackends(context.TODO(), routes, services, fakeK8sResolver)
 
-	if len(warnings) != len(expWarnings) {
-		t.Errorf("resolveBackends() mismatch on warnings, expected %d warnings, got %d; warnings: %v", len(expWarnings), len(warnings), warnings)
+	if fakeK8sResolver.ResolveCallCount() != 4 {
+		t.Errorf("resolveBackends() mismatch on resolve call count; expected 5, got %d", fakeK8sResolver.ResolveCallCount())
 	}
 
 	if len(backends) != 5 {
 		t.Errorf("resolveBackends() mismatch on backends, expected %d backends, got %d; backends: %v", 5, len(backends), backends)
-	}
-
-	for obj, warnSubString := range expWarnings {
-		warning := warnings[obj]
-		if len(warning) != 1 || !strings.Contains(warning[0], warnSubString) {
-			t.Errorf("resolveBackends() mismatch on warnings, expected warning[%s] to contain substring %s; got: %v", obj, warnSubString, warnings)
-		}
 	}
 
 	for expSvc, expBackend := range expResolvedBackends {
@@ -1461,4 +1405,7 @@ func TestResolveBackends(t *testing.T) {
 		}
 	}
 
+	if diff := cmp.Diff(expWarnings, warnings); diff != "" {
+		t.Errorf("resolveBackends() mismatch on warnings (-want +got):\n%s", diff)
+	}
 }

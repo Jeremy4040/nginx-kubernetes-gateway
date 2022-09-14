@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+	"fmt"
 
 	discoveryV1 "k8s.io/api/discovery/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -14,10 +15,42 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
+const (
+	// KubernetesServiceNameIndexField is the name of the Index Field we use to index EndpointSlices by their service owners.
+	KubernetesServiceNameIndexField = "k8sServiceName"
+	// KubernetesServiceNameLabel is the label used to identify the Kubernetes service name on an EndpointSlice.
+	KubernetesServiceNameLabel = "kubernetes.io/service-name"
+)
+
 type endpointSliceReconciler struct {
 	client.Client
 	scheme *runtime.Scheme
 	impl   EndpointSliceImpl
+}
+
+// ServiceNameIndexFunc is a client.IndexerFunc that parses a Kubernetes object and returns the value of the Kubernetes service-name label.
+// Used to index EndpointSlices by their service owners.
+func ServiceNameIndexFunc(obj client.Object) []string {
+	slice, ok := obj.(*discoveryV1.EndpointSlice)
+	if !ok {
+		return nil
+	}
+
+	name := GetServiceNameFromEndpointSlice(slice)
+	if name == "" {
+		return nil
+	}
+
+	return []string{name}
+}
+
+// GetServiceNameFromEndpointSlice returns the value of the Kubernetes service-name label from an EndpointSlice.
+func GetServiceNameFromEndpointSlice(slice *discoveryV1.EndpointSlice) string {
+	if slice.Labels == nil {
+		return ""
+	}
+
+	return slice.Labels[KubernetesServiceNameLabel]
 }
 
 // RegisterEndpointSliceController registers the EndpointSliceController in the manager.
@@ -26,6 +59,11 @@ func RegisterEndpointSliceController(mgr manager.Manager, impl EndpointSliceImpl
 		Client: mgr.GetClient(),
 		scheme: mgr.GetScheme(),
 		impl:   impl,
+	}
+
+	err := mgr.GetFieldIndexer().IndexField(context.TODO(), &discoveryV1.EndpointSlice{}, KubernetesServiceNameIndexField, ServiceNameIndexFunc)
+	if err != nil {
+		return fmt.Errorf("failed to add service name index for EndpointSlices: %w", err)
 	}
 
 	return ctlr.NewControllerManagedBy(mgr).

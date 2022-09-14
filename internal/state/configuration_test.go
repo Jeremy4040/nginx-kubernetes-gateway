@@ -9,6 +9,7 @@ import (
 	"sigs.k8s.io/gateway-api/apis/v1beta1"
 
 	"github.com/nginxinc/nginx-kubernetes-gateway/internal/helpers"
+	"github.com/nginxinc/nginx-kubernetes-gateway/internal/state/resolver"
 )
 
 func TestBuildConfiguration(t *testing.T) {
@@ -51,7 +52,7 @@ func TestBuildConfiguration(t *testing.T) {
 	fooBackendSvc := backendService{Name: "foo", Namespace: "test", Port: 80}
 
 	fooBackend := backend{
-		Endpoints: []Endpoint{
+		Endpoints: []resolver.Endpoint{
 			{
 				Address: "10.0.0.0",
 				Port:    8080,
@@ -63,7 +64,7 @@ func TestBuildConfiguration(t *testing.T) {
 
 	fooUpstream := Upstream{
 		Name: fooUpstreamName,
-		Endpoints: []Endpoint{
+		Endpoints: []resolver.Endpoint{
 			{
 				Address: "10.0.0.0",
 				Port:    8080,
@@ -922,7 +923,7 @@ func TestGetListenerHostname(t *testing.T) {
 }
 
 func TestBuildUpstreams(t *testing.T) {
-	fooEndpoints := []Endpoint{
+	fooEndpoints := []resolver.Endpoint{
 		{
 			Address: "10.0.0.0",
 			Port:    8080,
@@ -937,7 +938,7 @@ func TestBuildUpstreams(t *testing.T) {
 		},
 	}
 
-	barEndpoints := []Endpoint{
+	barEndpoints := []resolver.Endpoint{
 		{
 			Address: "11.0.0.0",
 			Port:    80,
@@ -960,12 +961,12 @@ func TestBuildUpstreams(t *testing.T) {
 		{Name: "foo", Namespace: "test", Port: 80}:              {Endpoints: fooEndpoints},
 		{Name: "bar", Namespace: "test", Port: 8080}:            {Endpoints: barEndpoints},
 		{Name: "nil-endpoints", Namespace: "test", Port: 443}:   {Endpoints: nil},
-		{Name: "empty-endpoints", Namespace: "test", Port: 443}: {Endpoints: []Endpoint{}},
+		{Name: "empty-endpoints", Namespace: "test", Port: 443}: {Endpoints: []resolver.Endpoint{}},
 	}
 
 	expUpstreams := []Upstream{
 		{Name: "test_bar_8080", Endpoints: barEndpoints},
-		{Name: "test_empty-endpoints_443", Endpoints: []Endpoint{}},
+		{Name: "test_empty-endpoints_443", Endpoints: []resolver.Endpoint{}},
 		{Name: "test_foo_80", Endpoints: fooEndpoints},
 		{Name: "test_nil-endpoints_443", Endpoints: nil},
 	}
