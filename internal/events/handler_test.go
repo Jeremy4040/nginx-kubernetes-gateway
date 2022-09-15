@@ -43,7 +43,7 @@ var _ = Describe("EventHandler", func() {
 		fakeSecretStore         *statefakes.FakeSecretStore
 		fakeSecretMemoryManager *statefakes.FakeSecretDiskMemoryManager
 		fakeGenerator           *configfakes.FakeGenerator
-		fakeNginxFimeMgr        *filefakes.FakeManager
+		fakeNginxFileMgr        *filefakes.FakeManager
 		fakeNginxRuntimeMgr     *runtimefakes.FakeManager
 		fakeStatusUpdater       *statusfakes.FakeUpdater
 	)
@@ -54,8 +54,8 @@ var _ = Describe("EventHandler", func() {
 		Expect(fakeGenerator.GenerateCallCount()).Should(Equal(1))
 		Expect(fakeGenerator.GenerateArgsForCall(0)).Should(Equal(expectedConf))
 
-		Expect(fakeNginxFimeMgr.WriteHTTPConfigCallCount()).Should(Equal(1))
-		name, cfg := fakeNginxFimeMgr.WriteHTTPConfigArgsForCall(0)
+		Expect(fakeNginxFileMgr.WriteHTTPConfigCallCount()).Should(Equal(1))
+		name, cfg := fakeNginxFileMgr.WriteHTTPConfigArgsForCall(0)
 		Expect(name).Should(Equal("http"))
 		Expect(cfg).Should(Equal(expectedCfg))
 
@@ -71,7 +71,7 @@ var _ = Describe("EventHandler", func() {
 		fakeSecretMemoryManager = &statefakes.FakeSecretDiskMemoryManager{}
 		fakeSecretStore = &statefakes.FakeSecretStore{}
 		fakeGenerator = &configfakes.FakeGenerator{}
-		fakeNginxFimeMgr = &filefakes.FakeManager{}
+		fakeNginxFileMgr = &filefakes.FakeManager{}
 		fakeNginxRuntimeMgr = &runtimefakes.FakeManager{}
 		fakeStatusUpdater = &statusfakes.FakeUpdater{}
 
@@ -81,7 +81,7 @@ var _ = Describe("EventHandler", func() {
 			SecretMemoryManager: fakeSecretMemoryManager,
 			Generator:           fakeGenerator,
 			Logger:              zap.New(),
-			NginxFileMgr:        fakeNginxFimeMgr,
+			NginxFileMgr:        fakeNginxFileMgr,
 			NginxRuntimeMgr:     fakeNginxRuntimeMgr,
 			StatusUpdater:       fakeStatusUpdater,
 		})
@@ -137,7 +137,7 @@ var _ = Describe("EventHandler", func() {
 		expectNoReconfig := func() {
 			Expect(fakeProcessor.ProcessCallCount()).Should(Equal(1))
 			Expect(fakeGenerator.GenerateCallCount()).Should(Equal(0))
-			Expect(fakeNginxFimeMgr.WriteHTTPConfigCallCount()).Should(Equal(0))
+			Expect(fakeNginxFileMgr.WriteHTTPConfigCallCount()).Should(Equal(0))
 			Expect(fakeNginxRuntimeMgr.ReloadCallCount()).Should(Equal(0))
 			Expect(fakeStatusUpdater.UpdateCallCount()).Should(Equal(0))
 		}
